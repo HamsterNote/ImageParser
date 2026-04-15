@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ImageParser Demo - Inspect</title>
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>ImageParser Placeholder Demo</h1>
+      </header>
+
+      <section class="card">
+        <h2>What this demo shows</h2>
+        <p>
+          This workspace currently exposes a placeholder parser API for image inputs.
+          The demo inspects a sample PNG-like blob and prints a controlled summary.
+        </p>
+      </section>
+
+      <section class="card">
+        <div class="actions">
+          <button type="button" data-action="inspect">Inspect sample image</button>
+          <span class="status" data-role="status">Idle</span>
+        </div>
+        <pre class="output" data-role="output">
+Click the button to inspect the placeholder image input.
+        </pre>
+      </section>
+    </div>
+
+    <script type="module" src="./demo.js"></script>
+  </body>
+</html>

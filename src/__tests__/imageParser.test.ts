@@ -1,4 +1,4 @@
-import { ImageParser, inspectImage, type ImageParserInspection } from '../index'
+import { ImageParser, type ImageParserInspection, inspectImage } from '../index'
 
 describe('ImageParser', () => {
   it('inspect 应返回类型安全的占位摘要', async () => {
@@ -30,5 +30,24 @@ describe('ImageParser', () => {
     const document = await ImageParser.encode(Uint8Array.from([9, 9, 9]))
 
     await expect(parser.decode(document)).rejects.toThrow('尚未实现')
+  })
+
+  it('global Blob 不可用时仍可识别 array-buffer-view', async () => {
+    const originalBlob = globalThis.Blob
+
+    Reflect.deleteProperty(globalThis, 'Blob')
+
+    try {
+      const inspection = await ImageParser.inspect(Uint8Array.from([1, 2, 3]))
+
+      expect(inspection.kind).toBe('array-buffer-view')
+      expect(inspection.status).toBe('placeholder')
+    } finally {
+      if (originalBlob === undefined) {
+        Reflect.deleteProperty(globalThis, 'Blob')
+      } else {
+        globalThis.Blob = originalBlob
+      }
+    }
   })
 })

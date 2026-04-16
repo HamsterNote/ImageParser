@@ -32,6 +32,7 @@ module.exports = {
   },
   collectCoverage: true,
   coverageDirectory: 'coverage',
+  coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   coverageReporters: ['text', 'lcov', 'html'],
   transformIgnorePatterns: ['/node_modules/(?!@hamster-note/)']
 }

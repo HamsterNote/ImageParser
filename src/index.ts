@@ -7,10 +7,7 @@ import {
   TextDir
 } from '@hamster-note/types'
 
-export type ImageParserInputKind =
-  | 'array-buffer'
-  | 'array-buffer-view'
-  | 'blob'
+export type ImageParserInputKind = 'array-buffer' | 'array-buffer-view' | 'blob'
 
 export interface ImageParserInspection {
   byteLength: number
@@ -26,8 +23,12 @@ export interface CreatePlaceholderImageDocumentOptions {
   title?: string
 }
 
+function isBlobInput(input: ParserInput): input is Blob {
+  return typeof Blob !== 'undefined' && input instanceof Blob
+}
+
 function detectInputKind(input: ParserInput): ImageParserInputKind {
-  if (input instanceof Blob) return 'blob'
+  if (isBlobInput(input)) return 'blob'
   if (ArrayBuffer.isView(input)) return 'array-buffer-view'
   return 'array-buffer'
 }
@@ -109,13 +110,12 @@ export class ImageParser extends DocumentParser {
 
   static async inspect(input: ParserInput): Promise<ImageParserInspection> {
     const bytes = await ImageParser.toUint8Array(input)
-    const mimeType = input instanceof Blob && input.type ? input.type : undefined
+    const mimeType = isBlobInput(input) && input.type ? input.type : undefined
 
     return {
       byteLength: bytes.byteLength,
       kind: detectInputKind(input),
-      message:
-        'ImageParser 当前提供工程初始化占位实现，尚未执行真实图片解析。',
+      message: 'ImageParser 当前提供工程初始化占位实现，尚未执行真实图片解析。',
       mimeType,
       status: 'placeholder',
       supportedExtensions: [...ImageParser.exts]
@@ -131,7 +131,9 @@ export class ImageParser extends DocumentParser {
     return ImageParser.encode(input)
   }
 
-  async decode(_intermediateDocument: IntermediateDocument): Promise<ParserInput> {
+  async decode(
+    _intermediateDocument: IntermediateDocument
+  ): Promise<ParserInput> {
     throw new Error(
       'ImageParser.decode 尚未实现；当前初始化阶段仅提供占位 inspect/encode 能力。'
     )

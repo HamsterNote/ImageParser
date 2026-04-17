@@ -1,5 +1,6 @@
 import {
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -7,26 +8,37 @@ import {
   jest
 } from '@jest/globals'
 
-import { ImageParser, type ImageParserInspection, inspectImage } from '../index'
-
 type OcrResult = {
-  points: unknown
-  text: string[]
+  items: Array<{
+    poly: Array<[number, number]>
+    score?: number
+    text: string
+  }>
 }
 
 type CanvasBehavior = 'success' | 'no-context' | 'empty-blob'
 type ImageBehavior = 'load' | 'error'
 
-const mockInit = jest.fn(() => Promise.resolve())
-const mockRecognize = jest.fn((_image: HTMLImageElement) => {
-  return Promise.resolve<OcrResult>({ text: [], points: [] })
+const mockDispose = jest.fn(() => Promise.resolve())
+const mockPredict = jest.fn((_image: HTMLImageElement) => {
+  return Promise.resolve<Array<OcrResult>>([{ items: [] }])
 })
+const mockCreate = jest.fn(() =>
+  Promise.resolve({
+    dispose: mockDispose,
+    predict: mockPredict
+  })
+)
 
-jest.mock('@paddlejs-models/ocr', () => ({
-  detect: jest.fn(),
-  init: mockInit,
-  recognize: mockRecognize
+jest.unstable_mockModule('@paddleocr/paddleocr-js', () => ({
+  PaddleOCR: {
+    create: mockCreate
+  }
 }))
+
+let ImageParser: typeof import('../index').ImageParser
+let inspectImage: typeof import('../index').inspectImage
+let disposePaddleOcrRuntimeForTesting: typeof import('../index').__disposePaddleOcrRuntimeForTesting
 
 const defaultImageWidth = 320
 const defaultImageHeight = 180
@@ -90,15 +102,31 @@ class MockImage {
   }
 }
 
+beforeAll(async () => {
+  const imageParserModule = await import('../index')
+
+  ImageParser = imageParserModule.ImageParser
+  inspectImage = imageParserModule.inspectImage
+  disposePaddleOcrRuntimeForTesting =
+    imageParserModule.__disposePaddleOcrRuntimeForTesting
+})
+
 beforeEach(() => {
   canvasBehavior = 'success'
   imageBehavior = 'load'
+  Reflect.deleteProperty(globalThis, '__IMAGE_PARSER_PADDLE_OCR__')
 
-  mockInit.mockReset()
-  mockInit.mockResolvedValue(undefined)
+  mockCreate.mockReset()
+  mockCreate.mockImplementation(async () => ({
+    dispose: mockDispose,
+    predict: mockPredict
+  }))
 
-  mockRecognize.mockReset()
-  mockRecognize.mockImplementation(async () => ({ text: [], points: [] }))
+  mockDispose.mockReset()
+  mockDispose.mockResolvedValue(undefined)
+
+  mockPredict.mockReset()
+  mockPredict.mockImplementation(async () => [{ items: [] }])
 
   canvasContextMock = {
     clearRect: jest.fn(),
@@ -172,7 +200,10 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await disposePaddleOcrRuntimeForTesting()
+  Reflect.deleteProperty(globalThis, '__IMAGE_PARSER_PADDLE_OCR__')
+
   if (hadDocument) {
     Reflect.set(globalThis, 'document', originalDocument)
   } else {
@@ -210,25 +241,30 @@ describe('ImageParser', () => {
       type: 'image/png'
     })
 
-    const inspection: ImageParserInspection = await inspectImage(blob)
+    const inspection = await inspectImage(blob)
 
     expect(inspection.status).toBe('ocr-supported')
-    expect(mockInit).not.toHaveBeenCalled()
-    expect(mockRecognize).not.toHaveBeenCalled()
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockPredict).not.toHaveBeenCalled()
   })
 
   it('encode 成功时映射 OCR 结果', async () => {
-    mockRecognize.mockResolvedValueOnce({
-      points: [
-        [
-          [10, 20],
-          [110, 20],
-          [110, 44],
-          [10, 44]
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
         ]
-      ],
-      text: ['Hello OCR']
-    })
+      }
+    ])
 
     const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     const pages = await document.pages
@@ -260,7 +296,7 @@ describe('ImageParser', () => {
   })
 
   it('encode 空识别结果时返回空文本页', async () => {
-    mockRecognize.mockResolvedValueOnce({ points: [], text: [] })
+    mockPredict.mockResolvedValueOnce([{ items: [] }])
 
     const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     const pages = await document.pages
@@ -276,12 +312,104 @@ describe('ImageParser', () => {
     expect(texts).toHaveLength(0)
   })
 
+  it('encode 会过滤空文本、缺失坐标和非法多边形项', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [0, 0],
+              [10, 0],
+              [10, 10],
+              [0, 10]
+            ],
+            score: 0.91,
+            text: '   '
+          },
+          {
+            poly: [
+              [0, 0],
+              [10, 10]
+            ],
+            score: 0.87,
+            text: 'invalid-poly'
+          },
+          {
+            poly: [
+              [5, 6],
+              [105, 6],
+              [105, 36],
+              [5, 36]
+            ],
+            score: 0.99,
+            text: 'valid text'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+    const text = texts[0] as unknown as {
+      content: string
+      height: number
+      width: number
+      x: number
+      y: number
+    }
+
+    expect(texts).toHaveLength(1)
+    expect(text.content).toBe('valid text')
+    expect(text.x).toBe(5)
+    expect(text.y).toBe(6)
+    expect(text.width).toBe(100)
+    expect(text.height).toBe(30)
+  })
+
   it('OCR 推理失败时提示明确错误', async () => {
-    mockRecognize.mockRejectedValueOnce(new Error('runtime failed'))
+    mockPredict.mockRejectedValueOnce(new Error('runtime failed'))
 
     await expect(
       ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     ).rejects.toThrow('OCR 推理失败')
+  })
+
+  it('OCR 推理失败后会复位实例缓存并允许重新初始化', async () => {
+    mockPredict
+      .mockRejectedValueOnce(new Error('runtime failed'))
+      .mockResolvedValueOnce([
+        {
+          items: [
+            {
+              poly: [
+                [10, 20],
+                [110, 20],
+                [110, 44],
+                [10, 44]
+              ],
+              score: 0.95,
+              text: 'Recovered OCR'
+            }
+          ]
+        }
+      ])
+
+    await expect(
+      ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    ).rejects.toThrow('OCR 推理失败')
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+
+    expect(document.pageCount).toBe(1)
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+    expect(mockDispose).toHaveBeenCalledTimes(1)
   })
 
   it('图片解码失败时提示明确错误', async () => {
@@ -308,7 +436,104 @@ describe('ImageParser', () => {
     expect(blobDocument.pageCount).toBe(1)
     expect(arrayBufferDocument.pageCount).toBe(1)
     expect(arrayBufferViewDocument.pageCount).toBe(1)
-    expect(mockRecognize).toHaveBeenCalledTimes(3)
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+    expect(mockPredict).toHaveBeenCalledTimes(3)
+  })
+
+  it('优先使用显式注入的 OCR 模块覆盖默认动态导入', async () => {
+    const overridePredict = jest.fn(async () => [
+      {
+        items: [
+          {
+            poly: [
+              [12, 18],
+              [112, 18],
+              [112, 42],
+              [12, 42]
+            ],
+            score: 0.99,
+            text: 'Injected OCR'
+          }
+        ]
+      }
+    ])
+    const overrideDispose = jest.fn(async () => undefined)
+    const overrideCreate = jest.fn(async () => ({
+      dispose: overrideDispose,
+      predict: overridePredict
+    }))
+
+    Reflect.set(globalThis, '__IMAGE_PARSER_PADDLE_OCR__', {
+      PaddleOCR: {
+        create: overrideCreate
+      }
+    })
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+    const text = texts[0] as unknown as { content: string }
+
+    expect(document.pageCount).toBe(1)
+    expect(text.content).toBe('Injected OCR')
+    expect(overrideCreate).toHaveBeenCalledTimes(1)
+    expect(overridePredict).toHaveBeenCalledTimes(1)
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('支持使用真实类导出形状的 PaddleOCR 工厂', async () => {
+    const overridePredict = jest.fn(async () => [
+      {
+        items: [
+          {
+            poly: [
+              [14, 16],
+              [114, 16],
+              [114, 40],
+              [14, 40]
+            ],
+            score: 0.99,
+            text: 'Class OCR'
+          }
+        ]
+      }
+    ])
+    const overrideDispose = jest.fn(async () => undefined)
+
+    class OverridePaddleOCR {
+      static async create() {
+        return {
+          dispose: overrideDispose,
+          predict: overridePredict
+        }
+      }
+    }
+
+    Reflect.set(globalThis, '__IMAGE_PARSER_PADDLE_OCR__', {
+      PaddleOCR: OverridePaddleOCR
+    })
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+    const text = texts[0] as unknown as { content: string }
+
+    expect(document.pageCount).toBe(1)
+    expect(text.content).toBe('Class OCR')
+    expect(overridePredict).toHaveBeenCalledTimes(1)
+    expect(mockCreate).not.toHaveBeenCalled()
   })
 
   it('ArrayBuffer 输入会根据图片签名设置可解码 MIME', async () => {
@@ -339,17 +564,22 @@ describe('ImageParser', () => {
   })
 
   it('encode 保存原图并支持 decode 按中间文档重建图片', async () => {
-    mockRecognize.mockResolvedValueOnce({
-      points: [
-        [
-          [10, 20],
-          [110, 20],
-          [110, 44],
-          [10, 44]
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
         ]
-      ],
-      text: ['Hello OCR']
-    })
+      }
+    ])
 
     const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     const pages = await document.pages
@@ -381,6 +611,15 @@ describe('ImageParser', () => {
       100
     )
     expect(canvasContextMock.drawImage).not.toHaveBeenCalled()
+  })
+
+  it('显式释放 OCR 实例后下次 encode 会重新初始化', async () => {
+    await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    await disposePaddleOcrRuntimeForTesting()
+    await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+    expect(mockDispose).toHaveBeenCalledTimes(1)
   })
 
   it('decode 缺少 thumbnail 时回退为默认图片类型并继续导出', async () => {
@@ -416,17 +655,22 @@ describe('ImageParser', () => {
   })
 
   it('decode 使用文本样式与定位在页面上绘制内容', async () => {
-    mockRecognize.mockResolvedValueOnce({
-      points: [
-        [
-          [10, 20],
-          [110, 20],
-          [110, 44],
-          [10, 44]
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
         ]
-      ],
-      text: ['Hello OCR']
-    })
+      }
+    ])
 
     const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     const pages = await document.pages

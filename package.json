@@ -12,7 +12,7 @@
   "dependencies": {
     "@hamster-note/document-parser": "^0.3.0",
     "@hamster-note/types": "^0.5.1",
-    "@paddlejs-models/ocr": "^1.2.4"
+    "@paddleocr/paddleocr-js": "0.3.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

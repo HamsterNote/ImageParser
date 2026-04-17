@@ -1,8 +1,3 @@
-import { IntermediateDocument } from '@hamster-note/types'
-import { recognize } from '@paddlejs-models/ocr'
-
-import { ImageParser } from '../dist/index.js'
-
 const PNG_SIGNATURE = [137, 80, 78, 71]
 const JPEG_SIGNATURE = [255, 216, 255]
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png'
@@ -26,6 +21,48 @@ const decodePlaceholder = document.querySelector(
 
 let latestDecodeResultUrl
 let latestDocument
+let imageParserPromise
+let intermediateDocumentApiPromise
+let demoPaddleOcrModulePromise
+
+const loadImageParser = async () => {
+  if (!imageParserPromise) {
+    imageParserPromise = import('../dist/index.js')
+      .then((module) => module.ImageParser)
+      .catch((error) => {
+        imageParserPromise = undefined
+        throw error
+      })
+  }
+
+  return imageParserPromise
+}
+
+const loadDemoPaddleOcrModule = async () => {
+  if (!demoPaddleOcrModulePromise) {
+    demoPaddleOcrModulePromise = import('./paddlejs-ocr-shim.js').catch(
+      (error) => {
+        demoPaddleOcrModulePromise = undefined
+        throw error
+      }
+    )
+  }
+
+  return demoPaddleOcrModulePromise
+}
+
+const loadIntermediateDocumentApi = async () => {
+  if (!intermediateDocumentApiPromise) {
+    intermediateDocumentApiPromise = import('@hamster-note/types')
+      .then((module) => module.IntermediateDocument)
+      .catch((error) => {
+        intermediateDocumentApiPromise = undefined
+        throw error
+      })
+  }
+
+  return intermediateDocumentApiPromise
+}
 
 const setStatus = (text) => {
   if (status) {
@@ -58,11 +95,17 @@ const getSelectedImage = () => {
 }
 
 const createDocumentSnapshot = async (document) => {
+  const IntermediateDocument = await loadIntermediateDocumentApi()
   const serialized = await IntermediateDocument.serialize(document)
+  const textCount = serialized.pages.reduce(
+    (count, page) => count + page.texts.length,
+    0
+  )
 
   return {
     emptyResult: serialized.pages.every((page) => page.texts.length === 0),
     parsed: IntermediateDocument.parse(serialized),
+    textCount,
     value: serialized
   }
 }
@@ -115,17 +158,6 @@ const loadImageElement = async (src) => {
     }
     image.src = src
   })
-}
-
-const runRawOcr = async (imageFile) => {
-  const objectUrl = URL.createObjectURL(imageFile)
-
-  try {
-    const image = await loadImageElement(objectUrl)
-    return recognize(image)
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
 }
 
 const getPreviewLineWidth = (pageWidth, pageHeight) => {
@@ -295,16 +327,17 @@ const handleInspect = async () => {
   latestDocument = undefined
   setDecodeEnabled(false)
   setStatus('Running OCR...')
-  setSummary('正在分别展示 Paddle OCR 原始结果、ImageParser 中间态文档与原图标注预览。')
+  setSummary('正在执行单次 OCR 并生成中间态文档；首次运行可能需要等待模型加载。')
   setOutput(rawOutput, 'Working...')
   setOutput(documentOutput, 'Working...')
   resetResultPanels('Rendering overlay preview...', 'No decode result yet.')
 
   try {
+    globalThis.__IMAGE_PARSER_PADDLE_OCR__ = await loadDemoPaddleOcrModule()
+    const ImageParser = await loadImageParser()
     const inspection = await ImageParser.inspect(image)
     const document = await ImageParser.encode(image)
     const documentSnapshot = await createDocumentSnapshot(document)
-    const rawOcrResult = await runRawOcr(image)
 
     latestDocument = documentSnapshot.parsed
     await renderOverlayPreview(documentSnapshot.parsed)
@@ -313,11 +346,13 @@ const handleInspect = async () => {
     setSummary(
       documentSnapshot.emptyResult
         ? 'OCR 成功，但未识别到文字；下方预览与 Decode 将基于右侧中间文档展示。'
-        : 'OCR 成功；左侧为原始 OCR，右侧为中间态文档，下方预览与 Decode 均基于该文档。'
+        : 'OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。'
     )
     setOutput(rawOutput, {
       inspection,
-      rawOcrResult
+      note: '已跳过额外原始 OCR 推理，以避免同一张图片执行两次识别导致页面卡顿。',
+      pageCount: documentSnapshot.value.pages.length,
+      textCount: documentSnapshot.textCount
     })
     setOutput(documentOutput, {
       inspection,
@@ -352,6 +387,7 @@ const handleDecode = async () => {
   resetDecodeResult('Decoding...')
 
   try {
+    const ImageParser = await loadImageParser()
     const decodedBuffer = await ImageParser.decode(latestDocument)
     const artifact = createDecodeArtifact(decodedBuffer)
     latestDecodeResultUrl = artifact.objectUrl

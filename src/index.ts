@@ -6,7 +6,11 @@ import {
   IntermediateText,
   TextDir
 } from '@hamster-note/types'
-import type * as PaddleOcr from '@paddlejs-models/ocr'
+import type {
+  OcrResultItem,
+  PaddleOCR,
+  PaddleOCRCreateOptions
+} from '@paddleocr/paddleocr-js'
 
 export type ImageParserInputKind = 'array-buffer' | 'array-buffer-view' | 'blob'
 
@@ -33,6 +37,8 @@ interface BoundingBox {
   height: number
 }
 
+type OcrPoint = readonly [number, number]
+
 interface RenderCanvas {
   getContext(contextId: '2d'): CanvasRenderingContext2D | null
   height: number
@@ -45,17 +51,46 @@ interface NormalizedOcrTextBlock {
   content: string
 }
 
-interface PaddleOcrRuntime {
-  init: typeof PaddleOcr.init
-  recognize: typeof PaddleOcr.recognize
+type PaddleOcrModule = typeof import('@paddleocr/paddleocr-js')
+type PaddleOcrInstance = Pick<PaddleOCR, 'dispose' | 'predict'>
+
+declare global {
+  interface Window {
+    __IMAGE_PARSER_PADDLE_OCR__?: unknown
+  }
+
+  var __IMAGE_PARSER_PADDLE_OCR__: unknown
+}
+
+interface PaddleOcrFactory {
+  create(options?: PaddleOCRCreateOptions): Promise<PaddleOcrInstance>
 }
 
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png'
 const DEFAULT_FONT_FAMILY = 'sans-serif'
+const DEFAULT_PADDLE_OCR_OPTIONS = {
+  worker: false,
+  unsupportedBehavior: 'error',
+  lang: 'ch',
+  ocrVersion: 'PP-OCRv5',
+  ortOptions: {
+    backend: 'wasm',
+    disableWasmProxy: true,
+    numThreads: 1,
+    proxy: false,
+    simd: false
+  }
+} satisfies PaddleOCRCreateOptions
 const PNG_SIGNATURE = [137, 80, 78, 71] as const
 const JPEG_SIGNATURE = [255, 216, 255] as const
 
-let paddleOcrRuntimePromise: Promise<PaddleOcrRuntime> | undefined
+let paddleOcrInstancePromise: Promise<PaddleOcrInstance> | undefined
+
+function getGlobalPaddleOcrOverride(): unknown {
+  if (typeof globalThis !== 'object' || globalThis === null) return undefined
+
+  return Reflect.get(globalThis, '__IMAGE_PARSER_PADDLE_OCR__')
+}
 
 function isBlobInput(input: ParserInput): input is Blob {
   return typeof Blob !== 'undefined' && input instanceof Blob
@@ -194,46 +229,111 @@ async function toImageBlob(input: ParserInput): Promise<Blob> {
   })
 }
 
-function isPaddleOcrRuntime(value: unknown): value is PaddleOcrRuntime {
-  if (typeof value !== 'object' || value === null) return false
-
-  const candidate = value as {
-    init?: unknown
-    recognize?: unknown
+function isPaddleOcrFactory(value: unknown): value is PaddleOcrFactory {
+  if (
+    (typeof value !== 'object' && typeof value !== 'function') ||
+    value === null
+  ) {
+    return false
   }
 
-  return (
-    typeof candidate.init === 'function' &&
-    typeof candidate.recognize === 'function'
-  )
+  const candidate = value as {
+    create?: unknown
+  }
+
+  return typeof candidate.create === 'function'
 }
 
-function resolvePaddleOcrRuntime(value: unknown): PaddleOcrRuntime {
-  if (isPaddleOcrRuntime(value)) return value
+function resolvePaddleOcrFactory(value: unknown): PaddleOcrFactory {
+  if (isPaddleOcrFactory(value)) return value
+
+  if (typeof value === 'object' && value !== null && 'PaddleOCR' in value) {
+    const candidate = value as { PaddleOCR?: unknown }
+    if (isPaddleOcrFactory(candidate.PaddleOCR)) return candidate.PaddleOCR
+  }
 
   if (typeof value === 'object' && value !== null && 'default' in value) {
     const candidate = value as { default?: unknown }
-    if (isPaddleOcrRuntime(candidate.default)) return candidate.default
+    if (isPaddleOcrFactory(candidate.default)) return candidate.default
+
+    if (
+      typeof candidate.default === 'object' &&
+      candidate.default !== null &&
+      'PaddleOCR' in candidate.default
+    ) {
+      const nestedCandidate = candidate.default as { PaddleOCR?: unknown }
+      if (isPaddleOcrFactory(nestedCandidate.PaddleOCR)) {
+        return nestedCandidate.PaddleOCR
+      }
+    }
   }
 
   throw createParserError('ImageParser OCR 模型加载失败：OCR 模块接口不可用')
 }
 
-async function loadPaddleOcrRuntime(): Promise<PaddleOcrRuntime> {
-  if (!paddleOcrRuntimePromise) {
-    paddleOcrRuntimePromise = import('@paddlejs-models/ocr')
-      .then(async (ocrModule) => {
-        const runtime = resolvePaddleOcrRuntime(ocrModule)
-        await runtime.init()
+function isPaddleOcrInstance(value: unknown): value is PaddleOcrInstance {
+  if (typeof value !== 'object' || value === null) return false
+
+  const candidate = value as {
+    dispose?: unknown
+    predict?: unknown
+  }
+
+  return (
+    typeof candidate.dispose === 'function' &&
+    typeof candidate.predict === 'function'
+  )
+}
+
+async function clearPaddleOcrInstance(options?: {
+  dispose?: boolean
+}): Promise<void> {
+  const dispose = options?.dispose ?? true
+  const currentInstancePromise = paddleOcrInstancePromise
+  paddleOcrInstancePromise = undefined
+
+  if (!dispose || !currentInstancePromise) return
+
+  try {
+    const instance = await currentInstancePromise
+    await instance.dispose()
+  } catch {
+    // ignore disposal errors when resetting cached runtime
+  }
+}
+
+async function loadPaddleOcrRuntime(): Promise<PaddleOcrInstance> {
+  if (!paddleOcrInstancePromise) {
+    paddleOcrInstancePromise = Promise.resolve(getGlobalPaddleOcrOverride())
+      .then(async (globalOverride) => {
+        if (globalOverride !== undefined) return globalOverride
+
+        return await import('@paddleocr/paddleocr-js')
+      })
+      .then(async (ocrModule: PaddleOcrModule | unknown) => {
+        const runtime = await resolvePaddleOcrFactory(ocrModule).create(
+          DEFAULT_PADDLE_OCR_OPTIONS
+        )
+
+        if (!isPaddleOcrInstance(runtime)) {
+          throw createParserError(
+            'ImageParser OCR 模型加载失败：OCR 实例接口不可用'
+          )
+        }
+
         return runtime
       })
       .catch((error: unknown) => {
-        paddleOcrRuntimePromise = undefined
+        paddleOcrInstancePromise = undefined
         throw createParserError('ImageParser OCR 模型加载失败', error)
       })
   }
 
-  return paddleOcrRuntimePromise
+  return paddleOcrInstancePromise
+}
+
+export async function __disposePaddleOcrRuntimeForTesting(): Promise<void> {
+  await clearPaddleOcrInstance()
 }
 
 function getImageDimensions(image: HTMLImageElement): {
@@ -300,7 +400,7 @@ async function decodeImageBlob(blob: Blob): Promise<DecodedImage> {
   })
 }
 
-function toPoint(value: unknown): readonly [number, number] | undefined {
+function toPoint(value: unknown): OcrPoint | undefined {
   if (!Array.isArray(value) || value.length < 2) return undefined
 
   const [rawX, rawY] = value as readonly unknown[]
@@ -316,39 +416,22 @@ function toPoint(value: unknown): readonly [number, number] | undefined {
   return [rawX, rawY]
 }
 
-function toPointList(value: unknown): readonly (readonly [number, number])[] {
+function toPointList(value: unknown): readonly OcrPoint[] {
   if (!Array.isArray(value)) return []
 
-  return value.reduce<(readonly [number, number])[]>((points, entry) => {
+  return value.reduce<OcrPoint[]>((points, entry) => {
     const point = toPoint(entry)
     if (point) points.push(point)
     return points
   }, [])
 }
 
-function getFallbackBox(
-  image: Pick<DecodedImage, 'width' | 'height'>,
-  content: string,
-  index: number
-): BoundingBox {
-  const height = 24
-  const width = Math.min(image.width, Math.max(1, content.length * 12))
-  const y = Math.min(
-    Math.max(0, index * 28),
-    Math.max(0, image.height - height)
-  )
-
-  return { x: 0, y, width, height }
-}
-
 function toBoundingBox(
   value: unknown,
-  image: Pick<DecodedImage, 'width' | 'height'>,
-  content: string,
-  index: number
-): BoundingBox {
+  image: Pick<DecodedImage, 'width' | 'height'>
+): BoundingBox | undefined {
   const points = toPointList(value)
-  if (points.length === 0) return getFallbackBox(image, content, index)
+  if (points.length < 3) return undefined
 
   const xs = points.map(([x]) => x)
   const ys = points.map(([, y]) => y)
@@ -357,43 +440,57 @@ function toBoundingBox(
   const right = Math.max(...xs)
   const bottom = Math.max(...ys)
 
+  const maxLeft = Math.max(0, image.width - 1)
+  const maxTop = Math.max(0, image.height - 1)
+  const clampedLeft = Math.min(Math.max(0, left), maxLeft)
+  const clampedTop = Math.min(Math.max(0, top), maxTop)
+  const clampedRight = Math.min(Math.max(clampedLeft + 1, right), image.width)
+  const clampedBottom = Math.min(Math.max(clampedTop + 1, bottom), image.height)
+
+  if (clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
+    return undefined
+  }
+
   return {
-    x: Math.max(0, left),
-    y: Math.max(0, top),
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top)
+    x: clampedLeft,
+    y: clampedTop,
+    width: Math.max(1, clampedRight - clampedLeft),
+    height: Math.max(1, clampedBottom - clampedTop)
   }
 }
 
 function normalizeOcrResult(
-  result: PaddleOcr.OCRResult,
+  result: readonly OcrResultItem[] | undefined,
   image: Pick<DecodedImage, 'width' | 'height'>
 ): NormalizedOcrTextBlock[] {
-  const rawTexts: readonly string[] = Array.isArray(result.text)
-    ? result.text
-    : []
-  const rawPoints: readonly unknown[] = Array.isArray(result.points)
-    ? result.points
-    : []
+  const rawItems = Array.isArray(result) ? result : []
 
-  return rawTexts.reduce<NormalizedOcrTextBlock[]>((blocks, rawText, index) => {
-    const content = rawText.trim()
+  return rawItems.reduce<NormalizedOcrTextBlock[]>((blocks, item) => {
+    const content = item.text.trim()
     if (!content) return blocks
 
+    const box = toBoundingBox(item.poly, image)
+    if (!box) return blocks
+
     blocks.push({
-      box: toBoundingBox(rawPoints[index], image, content, index),
+      box,
       content
     })
+
     return blocks
   }, [])
 }
 
-async function runOcr(image: HTMLImageElement): Promise<PaddleOcr.OCRResult> {
+async function runOcr(
+  image: HTMLImageElement
+): Promise<readonly OcrResultItem[] | undefined> {
   const ocr = await loadPaddleOcrRuntime()
 
   try {
-    return await ocr.recognize(image)
+    const [result] = await ocr.predict(image)
+    return result?.items
   } catch (error) {
+    await clearPaddleOcrInstance()
     throw createParserError('ImageParser OCR 推理失败', error)
   }
 }

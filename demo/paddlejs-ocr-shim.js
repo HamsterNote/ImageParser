@@ -1,21 +1,78 @@
-const getPaddleOcr = () => {
-  const ocr = globalThis.paddlejs?.ocr
+import { PaddleOCR } from './vendor/paddleocr-browser.js'
 
-  if (!ocr) {
-    throw new Error('PaddleJS OCR runtime is not loaded.')
-  }
+const OCR_WORKER_ENTRY_PATH = new URL(
+  '../node_modules/@paddleocr/paddleocr-js/dist/assets/worker-entry-Dtffs1su.js',
+  import.meta.url
+)
+const ORT_WASM_PATH = new URL(
+  '../node_modules/onnxruntime-web/dist/',
+  import.meta.url
+).href
 
-  return ocr
+const createOcrWorker = () => {
+  return new Worker(OCR_WORKER_ENTRY_PATH, { type: 'module' })
 }
 
-export const init = (...args) => getPaddleOcr().init(...args)
+const demoPaddleOcrOptions = {
+  worker: {
+    createWorker: createOcrWorker
+  },
+  unsupportedBehavior: 'error',
+  lang: 'ch',
+  ocrVersion: 'PP-OCRv5',
+  ortOptions: {
+    backend: 'wasm',
+    wasmPaths: ORT_WASM_PATH,
+    disableWasmProxy: true,
+    numThreads: 1,
+    proxy: false,
+    simd: false
+  }
+}
 
-export const recognize = (...args) => getPaddleOcr().recognize(...args)
+let paddleOcrPromise
 
-export const detect = (...args) => getPaddleOcr().detect(...args)
+export const create = async () => {
+  if (!paddleOcrPromise) {
+    paddleOcrPromise = PaddleOCR.create(demoPaddleOcrOptions).catch((error) => {
+      paddleOcrPromise = undefined
+      throw error
+    })
+  }
+
+  return paddleOcrPromise
+}
+
+export { PaddleOCR }
+export * from './vendor/paddleocr-browser.js'
+
+export const createDemoPaddleOcr = async () => {
+  return create()
+}
+
+export const predict = async (...args) => {
+  const ocr = await createDemoPaddleOcr()
+  return ocr.predict(...args)
+}
+
+export const dispose = async () => {
+  const currentPromise = paddleOcrPromise
+  paddleOcrPromise = undefined
+
+  if (!currentPromise) return
+
+  try {
+    const ocr = await currentPromise
+    await ocr.dispose()
+  } catch {
+    // ignore disposal errors in demo helper
+  }
+}
 
 export default {
-  detect,
-  init,
-  recognize
+  PaddleOCR,
+  create,
+  createDemoPaddleOcr,
+  dispose,
+  predict
 }

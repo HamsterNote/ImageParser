@@ -10,25 +10,36 @@ import {
   jest
 } from '@jest/globals'
 
-const mockInit = jest.fn(() => Promise.resolve())
-const mockRecognize = jest.fn((_image: HTMLImageElement) => {
-  return Promise.resolve({
-    points: [
-      [
-        [10, 20],
-        [110, 20],
-        [110, 44],
-        [10, 44]
+const mockDispose = jest.fn(() => Promise.resolve())
+const mockPredict = jest.fn((_image: HTMLImageElement) => {
+  return Promise.resolve([
+    {
+      items: [
+        {
+          poly: [
+            [10, 20],
+            [110, 20],
+            [110, 44],
+            [10, 44]
+          ],
+          score: 0.98,
+          text: 'Hello OCR'
+        }
       ]
-    ],
-    text: ['Hello OCR']
-  })
+    }
+  ])
 })
+const mockCreate = jest.fn(() =>
+  Promise.resolve({
+    dispose: mockDispose,
+    predict: mockPredict
+  })
+)
 
-jest.mock('@paddlejs-models/ocr', () => ({
-  detect: jest.fn(),
-  init: mockInit,
-  recognize: mockRecognize
+jest.unstable_mockModule('@paddleocr/paddleocr-js', () => ({
+  PaddleOCR: {
+    create: mockCreate
+  }
 }))
 
 const distEntry = resolve(
@@ -101,10 +112,15 @@ beforeEach(() => {
     value: jest.fn()
   })
 
-  mockInit.mockReset()
-  mockInit.mockResolvedValue(undefined)
-  mockRecognize.mockReset()
-  mockRecognize.mockImplementation(async () => ({ points: [], text: [] }))
+  mockCreate.mockReset()
+  mockCreate.mockImplementation(async () => ({
+    dispose: mockDispose,
+    predict: mockPredict
+  }))
+  mockDispose.mockReset()
+  mockDispose.mockResolvedValue(undefined)
+  mockPredict.mockReset()
+  mockPredict.mockImplementation(async () => [{ items: [] }])
 })
 
 afterEach(() => {

@@ -737,6 +737,30 @@
   resolved "https://registry.npmmirror.com/@oxc-project/types/-/types-0.124.0.tgz#1dfd7b3fbb98febc2f91b505f48c940db73c8701"
   integrity sha512-VBFWMTBvHxS11Z5Lvlr3IWgrwhMTXV+Md+EQF0Xf60+wAdsGFTBx7X7K/hP4pi8N7dcm1RvcHwDxZ16Qx8keUg==
 
+"@paddlejs-mediapipe/opencv@0.0.4":
+  version "0.0.4"
+  resolved "https://registry.npmmirror.com/@paddlejs-mediapipe/opencv/-/opencv-0.0.4.tgz#dd65b6e90065eef9cce5f4ff69ffd43e48f82419"
+  integrity sha512-bfwixZPKGFh7JcAtLToTBmBiu/nyQjVrm0gf/pn92apHJQEYyhnAFGvgDubmqQbijmtP2/fbOMR4CuSSlq2g8w==
+
+"@paddlejs-models/ocr@^1.2.4":
+  version "1.2.4"
+  resolved "https://registry.npmmirror.com/@paddlejs-models/ocr/-/ocr-1.2.4.tgz#4da7a82f1cd2837de996e8d28e88c0a98e5989ea"
+  integrity sha512-mdvaWXQaCmLULEvCxcsUzHtDgmoDVzJX2LsqyMmJxSzfhgrtnscF1eLiLbaouDwg6n08koXP0BCzeB+0oAv/AQ==
+  dependencies:
+    "@paddlejs-mediapipe/opencv" "0.0.4"
+    "@paddlejs/paddlejs-backend-webgl" "^1.1.19"
+    "@paddlejs/paddlejs-core" "^2.1.17"
+
+"@paddlejs/paddlejs-backend-webgl@^1.1.19":
+  version "1.2.9"
+  resolved "https://registry.npmmirror.com/@paddlejs/paddlejs-backend-webgl/-/paddlejs-backend-webgl-1.2.9.tgz#7be2df7c8449548c61599d144085a38bc0bda8c8"
+  integrity sha512-cVDa0/Wbw2EyfsYqdYUPhFeqKsET79keEUWjyhYQmQkJfWg8j1qdR6yp7g6nx9qAGrqFvwuj1s0EqkYA1dok6A==
+
+"@paddlejs/paddlejs-core@^2.1.17":
+  version "2.2.0"
+  resolved "https://registry.npmmirror.com/@paddlejs/paddlejs-core/-/paddlejs-core-2.2.0.tgz#67c297e62c6b0f9738962a0b8ca1789d0325f0af"
+  integrity sha512-P3rPkF9fFHtq8uSte5gA7fJQwBNl9Ytsvj6aTcfQSsirnBO/HxMNu0gJyh7+lItvEtF92PR15eI0eOwJYfZDhQ==
+
 "@pkgjs/parseargs@^0.11.0":
   version "0.11.0"
   resolved "https://registry.npmmirror.com/@pkgjs/parseargs/-/parseargs-0.11.0.tgz#a77ea742fab25775145434eb1d2328cf5013ac33"

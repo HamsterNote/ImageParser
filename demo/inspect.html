@@ -9,28 +9,93 @@
   <body>
     <div class="container">
       <header>
-        <h1>ImageParser Placeholder Demo</h1>
+        <h1>ImageParser OCR Demo</h1>
       </header>
 
       <section class="card">
         <h2>What this demo shows</h2>
         <p>
-          This workspace currently exposes a placeholder parser API for image inputs.
-          The demo inspects a sample PNG-like blob and prints a controlled summary.
+          This workspace runs ImageParser OCR on a selected image and prints the
+          resulting <code>@hamster-note/types</code> intermediate document
+          structure, including empty OCR results and explicit error feedback.
+          Run <code>yarn build:all</code> before opening this demo because it imports
+          <code>../dist/index.js</code>.
         </p>
       </section>
 
       <section class="card">
         <div class="actions">
-          <button type="button" data-action="inspect">Inspect sample image</button>
+          <input type="file" accept="image/*" data-role="image-input" />
+          <button type="button" data-action="inspect">Run OCR</button>
+          <button type="button" data-action="decode" disabled>Decode</button>
           <span class="status" data-role="status">Idle</span>
         </div>
-        <pre class="output" data-role="output">
-Click the button to inspect the placeholder image input.
-        </pre>
+        <p class="summary" data-role="summary">
+          Choose an image, then click Run OCR.
+        </p>
+        <div class="result-grid">
+          <section class="result-panel">
+            <h3>Raw OCR Result</h3>
+            <pre class="output" data-role="raw-output">No OCR result yet.</pre>
+          </section>
+          <section class="result-panel">
+            <h3>Intermediate Document</h3>
+            <pre class="output" data-role="document-output">
+No intermediate document yet.
+            </pre>
+          </section>
+        </div>
+
+        <div class="preview-grid">
+          <section class="preview-panel">
+            <h3>Overlay Preview</h3>
+            <p class="preview-summary">
+              使用最近一次 OCR 生成的中间文档，在原图上绘制红色标注框。
+            </p>
+            <div class="image-stage">
+              <canvas
+                class="preview-canvas"
+                data-role="overlay-preview"
+                hidden
+              ></canvas>
+              <p class="preview-placeholder" data-role="overlay-placeholder">
+                No overlay preview yet.
+              </p>
+            </div>
+          </section>
+
+          <section class="preview-panel">
+            <h3>Decode Result</h3>
+            <p class="preview-summary">
+              点击 Decode 后展示 <code>ImageParser.decode()</code> 导出的标注图片。
+            </p>
+            <div class="image-stage">
+              <img
+                class="result-image"
+                data-role="decode-image"
+                alt="Decoded OCR overlay result"
+                hidden
+              />
+              <p class="artifact-meta" data-role="decode-meta" hidden></p>
+              <p class="preview-placeholder" data-role="decode-placeholder">
+                No decode result yet.
+              </p>
+            </div>
+          </section>
+        </div>
       </section>
     </div>
 
+    <script src="../node_modules/@paddlejs-models/ocr/lib/index.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "@hamster-note/document-parser": "https://esm.sh/@hamster-note/document-parser@0.3.1",
+          "@hamster-note/types": "https://esm.sh/@hamster-note/types@0.5.5",
+          "@paddlejs-models/ocr": "./paddlejs-ocr-shim.js"
+        }
+      }
+    </script>
     <script type="module" src="./demo.js"></script>
   </body>
 </html>

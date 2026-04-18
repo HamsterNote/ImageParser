@@ -107,6 +107,11 @@ const DEFAULT_PADDLE_OCR_OPTIONS = {
   unsupportedBehavior: 'error',
   lang: 'ch',
   ocrVersion: 'PP-OCRv5',
+  text_det_unclip_ratio: 1,
+  half_to_full: false,
+  halfToFull: false,
+  useAngleCls: true,
+  convertFullWidth: false,
   ortOptions: {
     backend: 'wasm',
     disableWasmProxy: true,
@@ -970,7 +975,7 @@ function createOcrText(
   block: NormalizedOcrTextBlock,
   index: number
 ): IntermediateText {
-  const fontSize = Math.max(1, Math.round(block.geometry.height))
+  const fontSize = Math.max(1, Math.round(block.geometry.height * 0.8))
   const lineHeight = Math.max(fontSize, Math.round(block.geometry.height))
   const ascent = Math.round(lineHeight * 0.75)
 
@@ -982,8 +987,8 @@ function createOcrText(
     fontWeight: block.fontWeight,
     italic: block.italic,
     color: '#000000',
-    width: block.geometry.width,
-    height: block.geometry.height,
+    width: block.geometry.width * 0.98,
+    height: block.geometry.height * 0.98,
     lineHeight,
     x: block.geometry.x,
     y: block.geometry.y,
@@ -1088,6 +1093,40 @@ function getCanvasTextDirection(text: IntermediateText): CanvasDirection {
   return text.dir === TextDir.RTL ? 'rtl' : 'ltr'
 }
 
+function getCanvasTextTargetWidth(text: IntermediateText): number | undefined {
+  return Number.isFinite(text.width) && text.width > 0 ? text.width : undefined
+}
+
+function getCanvasTextFallbackMaxWidth(text: IntermediateText): number {
+  return getCanvasTextTargetWidth(text) ?? 1
+}
+
+function measureCanvasTextNaturalWidth(
+  context: Pick<CanvasRenderingContext2D, 'measureText'>,
+  text: IntermediateText
+): number | undefined {
+  if (text.content.trim().length === 0) return undefined
+
+  try {
+    const measuredWidth = context.measureText(text.content).width
+    return Number.isFinite(measuredWidth) && measuredWidth > 0
+      ? measuredWidth
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function getCanvasTextScaleX(
+  targetWidth: number | undefined,
+  measuredWidth: number | undefined
+): number | undefined {
+  if (targetWidth === undefined || measuredWidth === undefined) return undefined
+
+  const scaleX = targetWidth / measuredWidth
+  return Number.isFinite(scaleX) && scaleX > 0 ? scaleX : undefined
+}
+
 function getCanvasTextRotation(text: IntermediateText): number {
   const baseRotate = getSafeAngle(text.rotate, MAX_TEXT_ROTATE)
   return text.vertical || text.dir === TextDir.TTB
@@ -1120,6 +1159,7 @@ function drawDecodedPage(
     const baselineY = getCanvasTextBaselineY(text)
     const rotation = getCanvasTextRotation(text)
     const skew = getCanvasTextSkew(text)
+    const fallbackMaxWidth = getCanvasTextFallbackMaxWidth(text)
 
     context.save()
     context.font = getCanvasTextFont(text)
@@ -1136,7 +1176,21 @@ function drawDecodedPage(
       context.transform(1, 0, Math.tan((skew * Math.PI) / 180), 1, 0, 0)
     }
 
-    context.fillText(text.content, 0, 0, Math.max(1, text.width))
+    const scaleX = getCanvasTextScaleX(
+      getCanvasTextTargetWidth(text),
+      measureCanvasTextNaturalWidth(context, text)
+    )
+
+    if (scaleX !== undefined) {
+      if (scaleX !== 1) {
+        context.scale(scaleX, 1)
+      }
+
+      context.fillText(text.content, 0, 0)
+    } else {
+      context.fillText(text.content, 0, 0, fallbackMaxWidth)
+    }
+
     context.restore()
   }
 

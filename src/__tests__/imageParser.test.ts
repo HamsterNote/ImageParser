@@ -64,10 +64,12 @@ let canvasContextMock: {
   getImageData: ReturnType<typeof jest.fn>
   lineTo: ReturnType<typeof jest.fn>
   lineWidth: number
+  measureText: ReturnType<typeof jest.fn>
   moveTo: ReturnType<typeof jest.fn>
   restore: ReturnType<typeof jest.fn>
   rotate: ReturnType<typeof jest.fn>
   save: ReturnType<typeof jest.fn>
+  scale: ReturnType<typeof jest.fn>
   stroke: ReturnType<typeof jest.fn>
   strokeRect: ReturnType<typeof jest.fn>
   strokeStyle: string
@@ -79,6 +81,7 @@ let createElementMock: ReturnType<typeof jest.fn>
 let imageBehavior: ImageBehavior = 'load'
 let createObjectURLMock: ReturnType<typeof jest.fn>
 let revokeObjectURLMock: ReturnType<typeof jest.fn>
+let measureTextWidthResolver: ((content: string) => number) | undefined
 let originalDocument: Document | undefined
 let originalImage: typeof Image | undefined
 let originalCreateObjectURL: typeof URL.createObjectURL | undefined
@@ -147,6 +150,10 @@ function createSampleImageData(
   }
 
   return data
+}
+
+function getMockMeasuredTextWidth(content: string): number {
+  return Math.max(0, content.length * 10)
 }
 
 function setSampleRegionConfig(
@@ -218,6 +225,7 @@ beforeEach(() => {
   mockPredict.mockImplementation(async () => [{ items: [] }])
 
   latestSampleRegionKey = undefined
+  measureTextWidthResolver = undefined
   sampleRegionConfigMap = new Map()
 
   canvasContextMock = {
@@ -260,10 +268,18 @@ beforeEach(() => {
     ),
     lineTo: jest.fn(),
     lineWidth: 0,
+    measureText: jest.fn((content: string) => {
+      const width = measureTextWidthResolver
+        ? measureTextWidthResolver(content)
+        : getMockMeasuredTextWidth(content)
+
+      return { width } as TextMetrics
+    }),
     moveTo: jest.fn(),
     restore: jest.fn(),
     rotate: jest.fn(),
     save: jest.fn(),
+    scale: jest.fn(),
     stroke: jest.fn(),
     strokeRect: jest.fn(),
     strokeStyle: '',
@@ -903,6 +919,7 @@ describe('ImageParser', () => {
     )
 
     canvasContextMock.drawImage.mockClear()
+    canvasContextMock.scale.mockClear()
     canvasContextMock.translate.mockClear()
     canvasContextMock.fillRect.mockClear()
     canvasContextMock.fillText.mockClear()
@@ -918,12 +935,13 @@ describe('ImageParser', () => {
       defaultImageHeight
     )
     expect(canvasContextMock.translate).toHaveBeenCalledWith(10, 38)
-    expect(canvasContextMock.fillText).toHaveBeenCalledWith(
-      'Hello OCR',
-      0,
-      0,
-      100
+    expect(canvasContextMock.scale).toHaveBeenCalledTimes(1)
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      100 / getMockMeasuredTextWidth('Hello OCR'),
+      6
     )
+    expect(canvasContextMock.scale.mock.calls[0]?.[1]).toBe(1)
+    expect(canvasContextMock.fillText).toHaveBeenCalledWith('Hello OCR', 0, 0)
     expect(canvasContextMock.drawImage).not.toHaveBeenCalled()
   })
 
@@ -1016,6 +1034,7 @@ describe('ImageParser', () => {
     firstPage.getTexts = async () => [clippedText]
     canvasContextMock.translate.mockClear()
     canvasContextMock.rotate.mockClear()
+    canvasContextMock.scale.mockClear()
     canvasContextMock.transform.mockClear()
     canvasContextMock.fillText.mockClear()
 
@@ -1037,6 +1056,13 @@ describe('ImageParser', () => {
       0,
       0
     )
+    expect(canvasContextMock.scale).toHaveBeenCalledTimes(1)
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      clippedText.width / getMockMeasuredTextWidth(clippedText.content),
+      6
+    )
+    expect(canvasContextMock.scale.mock.calls[0]?.[1]).toBe(1)
+    expect(canvasContextMock.fillText).toHaveBeenCalledWith('Hello OCR', 0, 0)
   })
 
   it('decode 对缺失或异常样式值执行安全回退', async () => {
@@ -1087,6 +1113,7 @@ describe('ImageParser', () => {
     }
 
     firstPage.getTexts = async () => [fallbackText]
+    canvasContextMock.scale.mockClear()
     canvasContextMock.rotate.mockClear()
     canvasContextMock.transform.mockClear()
     canvasContextMock.fillText.mockClear()
@@ -1098,12 +1125,147 @@ describe('ImageParser', () => {
     expect(canvasContextMock.fillStyle).toBe('#654321')
     expect(canvasContextMock.rotate).not.toHaveBeenCalled()
     expect(canvasContextMock.transform).not.toHaveBeenCalled()
+    expect(canvasContextMock.scale).toHaveBeenCalledWith(
+      100 / getMockMeasuredTextWidth('safe fallback'),
+      1
+    )
     expect(canvasContextMock.fillText).toHaveBeenCalledWith(
       'safe fallback',
       0,
-      0,
-      100
+      0
     )
+  })
+
+  it('decode 让文本回放宽度对齐并在编辑后立即采用当前 width', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    const updatedWidth = 180
+    const updatedText = {
+      ...originalText,
+      width: updatedWidth
+    }
+
+    firstPage.getTexts = async () => [updatedText]
+    canvasContextMock.scale.mockClear()
+    canvasContextMock.fillText.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(canvasContextMock.scale).toHaveBeenCalledTimes(1)
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      updatedWidth / getMockMeasuredTextWidth(updatedText.content),
+      6
+    )
+    expect(canvasContextMock.scale.mock.calls[0]?.[1]).toBe(1)
+    expect(canvasContextMock.fillText).toHaveBeenCalledWith('Hello OCR', 0, 0)
+  })
+
+  it('decode 在空文本、空白文本、测量异常或非法目标宽度时回退稳定绘制', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    measureTextWidthResolver = (content: string) => {
+      if (content === '测量异常') {
+        throw new Error('measureText failed')
+      }
+
+      return getMockMeasuredTextWidth(content)
+    }
+
+    firstPage.getTexts = async () => [
+      {
+        ...originalText,
+        content: '',
+        width: 120
+      },
+      {
+        ...originalText,
+        content: '   ',
+        width: 130
+      },
+      {
+        ...originalText,
+        content: '测量异常',
+        width: 140
+      },
+      {
+        ...originalText,
+        content: '非法宽度',
+        width: Number.NaN
+      }
+    ]
+
+    canvasContextMock.scale.mockClear()
+    canvasContextMock.fillText.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(canvasContextMock.scale).not.toHaveBeenCalled()
+    expect(canvasContextMock.fillText.mock.calls).toEqual([
+      ['', 0, 0, 120],
+      ['   ', 0, 0, 130],
+      ['测量异常', 0, 0, 140],
+      ['非法宽度', 0, 0, 1]
+    ])
   })
 
   it('文档序列化后仍可保留样式字段并继续解码', async () => {

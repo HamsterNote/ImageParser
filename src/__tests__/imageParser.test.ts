@@ -22,6 +22,14 @@ type SampleRegionConfig = {
   lowLuminance?: number
 }
 
+type TestTextPolygonPoint = [number, number]
+type TestTextPolygon = [
+  TestTextPolygonPoint,
+  TestTextPolygonPoint,
+  TestTextPolygonPoint,
+  TestTextPolygonPoint
+]
+
 type CanvasBehavior = 'success' | 'no-context' | 'empty-blob'
 type ImageBehavior = 'load' | 'error'
 
@@ -154,6 +162,122 @@ function createSampleImageData(
 
 function getMockMeasuredTextWidth(content: string): number {
   return Math.max(0, content.length * 10)
+}
+
+function createTextPolygon({
+  x,
+  y,
+  width,
+  height,
+  rotate = 0
+}: {
+  height: number
+  rotate?: number
+  width: number
+  x: number
+  y: number
+}): TestTextPolygon {
+  const radians = (rotate * Math.PI) / 180
+  const cosine = Math.cos(radians)
+  const sine = Math.sin(radians)
+  const topLeft: TestTextPolygonPoint = [x, y]
+  const topRight: TestTextPolygonPoint = [x + width * cosine, y + width * sine]
+  const bottomLeft: TestTextPolygonPoint = [
+    x - height * sine,
+    y + height * cosine
+  ]
+
+  return [
+    topLeft,
+    topRight,
+    [
+      topRight[0] + bottomLeft[0] - topLeft[0],
+      topRight[1] + bottomLeft[1] - topLeft[1]
+    ],
+    bottomLeft
+  ]
+}
+
+function getPolygonDistance(
+  [startX, startY]: TestTextPolygonPoint,
+  [endX, endY]: TestTextPolygonPoint
+): number {
+  return Math.hypot(endX - startX, endY - startY)
+}
+
+function normalizeAngle(value: number): number {
+  let normalized = value
+
+  while (normalized <= -180) normalized += 360
+  while (normalized > 180) normalized -= 360
+
+  return normalized
+}
+
+function getPolygonRotate(polygon: TestTextPolygon): number {
+  const [topLeft, topRight] = polygon
+  return normalizeAngle(
+    (Math.atan2(topRight[1] - topLeft[1], topRight[0] - topLeft[0]) * 180) /
+      Math.PI
+  )
+}
+
+function getPolygonWidth(polygon: TestTextPolygon): number {
+  const [topLeft, topRight, , bottomLeft] = polygon
+
+  return (
+    (getPolygonDistance(topLeft, topRight) +
+      getPolygonDistance(bottomLeft, polygon[2])) /
+    2
+  )
+}
+
+function getPolygonHeight(polygon: TestTextPolygon): number {
+  const [topLeft, topRight, bottomRight, bottomLeft] = polygon
+
+  return (
+    (getPolygonDistance(topLeft, bottomLeft) +
+      getPolygonDistance(topRight, bottomRight)) /
+    2
+  )
+}
+
+function getNormalizedDirection(
+  [startX, startY]: TestTextPolygonPoint,
+  [endX, endY]: TestTextPolygonPoint
+): TestTextPolygonPoint {
+  const length = Math.hypot(endX - startX, endY - startY)
+  if (!Number.isFinite(length) || length <= 0) return [0, 0]
+
+  return [(endX - startX) / length, (endY - startY) / length]
+}
+
+function getPolygonAdvanceWidth(
+  polygon: TestTextPolygon,
+  isVertical = false
+): number {
+  return isVertical
+    ? (getPolygonDistance(polygon[0], polygon[3]) +
+        getPolygonDistance(polygon[1], polygon[2])) /
+        2
+    : (getPolygonDistance(polygon[0], polygon[1]) +
+        getPolygonDistance(polygon[3], polygon[2])) /
+        2
+}
+
+function getBaselineOrigin(
+  polygon: TestTextPolygon,
+  ascent: number,
+  isVertical = false
+): TestTextPolygonPoint {
+  const [topLeft, topRight, , bottomLeft] = polygon
+  const horizontalAxis = getNormalizedDirection(topLeft, topRight)
+  const verticalAxis = getNormalizedDirection(topLeft, bottomLeft)
+  const [offsetX, offsetY] = isVertical
+    ? ([-horizontalAxis[0], -horizontalAxis[1]] as TestTextPolygonPoint)
+    : verticalAxis
+
+  return [topLeft[0] + offsetX * ascent, topLeft[1] + offsetY * ascent]
 }
 
 function setSampleRegionConfig(
@@ -420,13 +544,9 @@ describe('ImageParser', () => {
     const text = texts[0] as unknown as {
       content: string
       fontWeight: number
-      height: number
       italic: boolean
-      rotate: number
+      polygon: TestTextPolygon
       skew: number
-      width: number
-      x: number
-      y: number
     }
 
     expect(document.pageCount).toBe(1)
@@ -434,14 +554,97 @@ describe('ImageParser', () => {
     expect(page.height).toBe(defaultImageHeight)
     expect(texts).toHaveLength(1)
     expect(text.content).toBe('Hello OCR')
-    expect(text.x).toBe(10)
-    expect(text.y).toBe(20)
-    expect(text.width).toBe(100)
-    expect(text.height).toBe(24)
+    expect(text.polygon).toEqual([
+      [10, 20],
+      [110, 20],
+      [110, 44],
+      [10, 44]
+    ])
     expect(text.fontWeight).toBe(400)
     expect(text.italic).toBe(false)
-    expect(text.rotate).toBe(0)
+    expect(getPolygonRotate(text.polygon)).toBe(0)
     expect(text.skew).toBe(0)
+  })
+
+  it('encode 会把乱序 polygon 归一化为左上右上右下左下', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [110, 20],
+              [110, 44],
+              [10, 44],
+              [10, 20]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+    const text = texts[0] as unknown as {
+      polygon: TestTextPolygon
+    }
+
+    expect(text.polygon).toEqual([
+      [10, 20],
+      [110, 20],
+      [110, 44],
+      [10, 44]
+    ])
+  })
+
+  it('encode 在近竖直旋转文本上仍可归一化 polygon 点序', async () => {
+    const rotatedPolygon = createTextPolygon({
+      x: 120,
+      y: 40,
+      width: 32,
+      height: 96,
+      rotate: 80
+    })
+
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              rotatedPolygon[2],
+              rotatedPolygon[3],
+              rotatedPolygon[0],
+              rotatedPolygon[1]
+            ],
+            score: 0.97,
+            text: 'near vertical'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+    const text = texts[0] as unknown as {
+      polygon: TestTextPolygon
+    }
+
+    expect(text.polygon).toEqual(rotatedPolygon)
   })
 
   it('encode 空识别结果时返回空文本页', async () => {
@@ -505,33 +708,28 @@ describe('ImageParser', () => {
     const texts = await firstPage.getTexts()
     const invalidPolyText = texts[0] as unknown as {
       content: string
-      height: number
-      rotate: number
-      width: number
-      x: number
-      y: number
+      polygon: TestTextPolygon
     }
     const validText = texts[1] as unknown as {
       content: string
-      height: number
-      rotate: number
-      width: number
-      x: number
-      y: number
+      polygon: TestTextPolygon
     }
 
     expect(texts).toHaveLength(2)
     expect(invalidPolyText.content).toBe('invalid-poly')
-    expect(invalidPolyText.x).toBe(0)
-    expect(invalidPolyText.y).toBe(0)
-    expect(invalidPolyText.width).toBe(1)
-    expect(invalidPolyText.height).toBe(1)
-    expect(invalidPolyText.rotate).toBe(0)
+    expect(invalidPolyText.polygon).toEqual([
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1]
+    ])
     expect(validText.content).toBe('valid text')
-    expect(validText.x).toBe(5)
-    expect(validText.y).toBe(6)
-    expect(validText.width).toBe(100)
-    expect(validText.height).toBe(30)
+    expect(validText.polygon).toEqual([
+      [5, 6],
+      [105, 6],
+      [105, 36],
+      [5, 36]
+    ])
   })
 
   it('encode 会对旋转、斜体与异常样式线索执行稳定映射', async () => {
@@ -582,33 +780,48 @@ describe('ImageParser', () => {
       content: string
       fontWeight: number
       italic: boolean
-      rotate: number
+      polygon: TestTextPolygon
       skew: number
-      width: number
-      x: number
-      y: number
     }>
     const rotatedText = texts.find((text) => text.content === 'rotated')
     const italicText = texts.find((text) => text.content === 'italic')
     const fallbackText = texts.find((text) => text.content === 'fallback')
 
     expect(rotatedText).toBeDefined()
-    expect(rotatedText?.rotate).toBeCloseTo(14.6, 1)
+    expect(
+      getPolygonRotate(
+        rotatedText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(14.6, 1)
     expect(rotatedText?.italic).toBe(false)
     expect(Math.abs(rotatedText?.skew ?? 0)).toBeLessThan(1)
 
     expect(italicText).toBeDefined()
-    expect(italicText?.rotate).toBe(0)
+    expect(
+      getPolygonRotate(
+        italicText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBe(0)
     expect(italicText?.italic).toBe(true)
     expect(italicText?.skew).toBeCloseTo(17.4, 1)
 
     expect(fallbackText).toBeDefined()
-    expect(fallbackText?.x).toBe(20)
-    expect(fallbackText?.y).toBe(100)
-    expect(fallbackText?.width).toBe(100)
+    expect(fallbackText?.polygon).toEqual([
+      [20, 100],
+      [120, 100],
+      [120, 132],
+      [20, 132]
+    ])
     expect(fallbackText?.fontWeight).toBe(400)
     expect(fallbackText?.italic).toBe(false)
-    expect(fallbackText?.rotate).toBe(0)
+    expect(
+      getPolygonRotate(
+        fallbackText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBe(0)
     expect(fallbackText?.skew).toBe(0)
   })
 
@@ -660,11 +873,7 @@ describe('ImageParser', () => {
 
     const texts = (await firstPage.getTexts()) as Array<{
       content: string
-      height: number
-      rotate: number
-      width: number
-      x: number
-      y: number
+      polygon: TestTextPolygon
     }>
     const rotatedText = texts.find(
       (text) => text.content === 'rotated geometry'
@@ -677,25 +886,82 @@ describe('ImageParser', () => {
     )
 
     expect(rotatedText).toBeDefined()
-    expect(rotatedText?.x).toBe(10)
-    expect(rotatedText?.y).toBe(20)
-    expect(rotatedText?.width).toBeCloseTo(103.3, 1)
-    expect(rotatedText?.height).toBeCloseTo(24.7, 1)
-    expect(rotatedText?.rotate).toBeCloseTo(14.6, 1)
+    expect(rotatedText?.polygon).toEqual([
+      [10, 20],
+      [110, 46],
+      [104, 70],
+      [4, 44]
+    ])
+    expect(
+      getPolygonWidth(
+        rotatedText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(103.3, 1)
+    expect(
+      getPolygonHeight(
+        rotatedText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(24.7, 1)
+    expect(
+      getPolygonRotate(
+        rotatedText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(14.6, 1)
 
     expect(trapezoidText).toBeDefined()
-    expect(trapezoidText?.x).toBe(140)
-    expect(trapezoidText?.y).toBe(20)
-    expect(trapezoidText?.width).toBeCloseTo(101.1, 1)
-    expect(trapezoidText?.height).toBeCloseTo(32.4, 1)
-    expect(trapezoidText?.rotate).toBeCloseTo(2.3, 1)
+    expect(trapezoidText?.polygon).toEqual([
+      [140, 20],
+      [242, 24],
+      [236, 56],
+      [136, 52]
+    ])
+    expect(
+      getPolygonWidth(
+        trapezoidText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(101.1, 1)
+    expect(
+      getPolygonHeight(
+        trapezoidText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(32.4, 1)
+    expect(
+      getPolygonRotate(
+        trapezoidText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBeCloseTo(2.2, 1)
 
     expect(fallbackText).toBeDefined()
-    expect(fallbackText?.x).toBe(200)
-    expect(fallbackText?.y).toBe(40)
-    expect(fallbackText?.width).toBe(60)
-    expect(fallbackText?.height).toBe(20)
-    expect(fallbackText?.rotate).toBe(0)
+    expect(fallbackText?.polygon).toEqual([
+      [200, 40],
+      [260, 40],
+      [260, 60],
+      [200, 60]
+    ])
+    expect(
+      getPolygonWidth(
+        fallbackText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBe(60)
+    expect(
+      getPolygonHeight(
+        fallbackText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBe(20)
+    expect(
+      getPolygonRotate(
+        fallbackText?.polygon ??
+          createTextPolygon({ x: 0, y: 0, width: 1, height: 1 })
+      )
+    ).toBe(0)
   })
 
   it('OCR 推理失败时提示明确错误', async () => {
@@ -1023,12 +1289,15 @@ describe('ImageParser', () => {
       color: '#123456',
       fontFamily: 'Mock Sans',
       fontSize: 18,
-      height: 40,
       italic: true,
-      rotate: 15,
-      skew: 10,
-      x: -20,
-      y: defaultImageHeight - 5
+      polygon: createTextPolygon({
+        x: -20,
+        y: defaultImageHeight - 5,
+        width: 100,
+        height: 40,
+        rotate: 15
+      }),
+      skew: 10
     })
 
     firstPage.getTexts = async () => [clippedText]
@@ -1043,11 +1312,23 @@ describe('ImageParser', () => {
     expect(decodedBuffer.byteLength).toBeGreaterThan(0)
     expect(canvasContextMock.fillStyle).toBe('#123456')
     expect(canvasContextMock.font).toBe('italic 400 18px Mock Sans')
-    expect(canvasContextMock.translate).toHaveBeenCalledWith(
-      -20,
-      defaultImageHeight + 13
+    const [expectedBaselineX, expectedBaselineY] = getBaselineOrigin(
+      clippedText.polygon,
+      clippedText.ascent
     )
-    expect(canvasContextMock.rotate).toHaveBeenCalledWith((15 * Math.PI) / 180)
+
+    expect(canvasContextMock.translate.mock.calls[0]?.[0]).toBeCloseTo(
+      expectedBaselineX,
+      6
+    )
+    expect(canvasContextMock.translate.mock.calls[0]?.[1]).toBeCloseTo(
+      expectedBaselineY,
+      6
+    )
+    expect(canvasContextMock.rotate.mock.calls[0]?.[0]).toBeCloseTo(
+      (15 * Math.PI) / 180,
+      10
+    )
     expect(canvasContextMock.transform).toHaveBeenCalledWith(
       1,
       0,
@@ -1058,7 +1339,8 @@ describe('ImageParser', () => {
     )
     expect(canvasContextMock.scale).toHaveBeenCalledTimes(1)
     expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
-      clippedText.width / getMockMeasuredTextWidth(clippedText.content),
+      getPolygonWidth(clippedText.polygon) /
+        getMockMeasuredTextWidth(clippedText.content),
       6
     )
     expect(canvasContextMock.scale.mock.calls[0]?.[1]).toBe(1)
@@ -1104,12 +1386,9 @@ describe('ImageParser', () => {
       fontFamily: 'Mock Sans',
       fontSize: 20,
       fontWeight: Number.POSITIVE_INFINITY,
-      height: 20,
       italic: 'invalid' as unknown as boolean,
-      rotate: 999,
       skew: Number.NaN,
-      x: 8,
-      y: 10
+      polygon: createTextPolygon({ x: 8, y: 10, width: 100, height: 20 })
     }
 
     firstPage.getTexts = async () => [fallbackText]
@@ -1171,7 +1450,12 @@ describe('ImageParser', () => {
     const updatedWidth = 180
     const updatedText = {
       ...originalText,
-      width: updatedWidth
+      polygon: createTextPolygon({
+        x: 10,
+        y: 20,
+        width: updatedWidth,
+        height: 24
+      })
     }
 
     firstPage.getTexts = async () => [updatedText]
@@ -1183,11 +1467,290 @@ describe('ImageParser', () => {
     expect(decodedBuffer.byteLength).toBeGreaterThan(0)
     expect(canvasContextMock.scale).toHaveBeenCalledTimes(1)
     expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
-      updatedWidth / getMockMeasuredTextWidth(updatedText.content),
+      getPolygonWidth(updatedText.polygon) /
+        getMockMeasuredTextWidth(updatedText.content),
       6
     )
     expect(canvasContextMock.scale.mock.calls[0]?.[1]).toBe(1)
     expect(canvasContextMock.fillText).toHaveBeenCalledWith('Hello OCR', 0, 0)
+  })
+
+  it('decode 对梯形 polygon 使用上下边平均宽度回放', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    const trapezoidPolygon: TestTextPolygon = [
+      [20, 30],
+      [100, 30],
+      [120, 60],
+      [0, 60]
+    ]
+
+    firstPage.getTexts = async () => [
+      {
+        ...originalText,
+        polygon: trapezoidPolygon
+      }
+    ]
+    canvasContextMock.scale.mockClear()
+    canvasContextMock.fillText.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(canvasContextMock.scale).toHaveBeenCalledTimes(1)
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      getPolygonAdvanceWidth(trapezoidPolygon) /
+        getMockMeasuredTextWidth(originalText.content),
+      6
+    )
+    expect(canvasContextMock.scale.mock.calls[0]?.[1]).toBe(1)
+    expect(canvasContextMock.fillText).toHaveBeenCalledWith('Hello OCR', 0, 0)
+  })
+
+  it('decode 可归一化非标准起点的 polygon 点序', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    firstPage.getTexts = async () => [
+      {
+        ...originalText,
+        polygon: [
+          [110, 44],
+          [10, 44],
+          [10, 20],
+          [110, 20]
+        ] as TestTextPolygon
+      }
+    ]
+    canvasContextMock.translate.mockClear()
+    canvasContextMock.rotate.mockClear()
+    canvasContextMock.scale.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(canvasContextMock.translate).toHaveBeenCalledWith(10, 38)
+    expect(canvasContextMock.rotate).not.toHaveBeenCalled()
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      100 / getMockMeasuredTextWidth('Hello OCR'),
+      6
+    )
+  })
+
+  it('decode 在近竖直旋转文本上仍可归一化 polygon 点序', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    const rotatedPolygon = createTextPolygon({
+      x: 60,
+      y: 24,
+      width: 28,
+      height: 96,
+      rotate: 80
+    })
+
+    firstPage.getTexts = async () => [
+      {
+        ...originalText,
+        polygon: [
+          rotatedPolygon[2],
+          rotatedPolygon[3],
+          rotatedPolygon[0],
+          rotatedPolygon[1]
+        ] as TestTextPolygon
+      }
+    ]
+    canvasContextMock.translate.mockClear()
+    canvasContextMock.rotate.mockClear()
+    canvasContextMock.scale.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    const [expectedBaselineX, expectedBaselineY] = getBaselineOrigin(
+      rotatedPolygon,
+      originalText.ascent
+    )
+
+    expect(canvasContextMock.translate.mock.calls[0]?.[0]).toBeCloseTo(
+      expectedBaselineX,
+      6
+    )
+    expect(canvasContextMock.translate.mock.calls[0]?.[1]).toBeCloseTo(
+      expectedBaselineY,
+      6
+    )
+    expect(canvasContextMock.rotate.mock.calls[0]?.[0]).toBeCloseTo(
+      (80 * Math.PI) / 180,
+      10
+    )
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      getPolygonAdvanceWidth(rotatedPolygon) /
+        getMockMeasuredTextWidth(originalText.content),
+      6
+    )
+  })
+
+  it('decode 可消费 vertical/ttb 文本并沿纵向边回放', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    const verticalPolygon = createTextPolygon({
+      x: 30,
+      y: 40,
+      width: 20,
+      height: 120
+    })
+
+    firstPage.getTexts = async () => [
+      {
+        ...originalText,
+        dir: 'ttb' as (typeof originalText)['dir'],
+        polygon: verticalPolygon,
+        vertical: true
+      }
+    ]
+    canvasContextMock.translate.mockClear()
+    canvasContextMock.rotate.mockClear()
+    canvasContextMock.scale.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    const [expectedBaselineX, expectedBaselineY] = getBaselineOrigin(
+      verticalPolygon,
+      originalText.ascent,
+      true
+    )
+    expect(canvasContextMock.translate.mock.calls[0]?.[0]).toBeCloseTo(
+      expectedBaselineX,
+      6
+    )
+    expect(canvasContextMock.translate.mock.calls[0]?.[1]).toBeCloseTo(
+      expectedBaselineY,
+      6
+    )
+    expect(canvasContextMock.rotate.mock.calls[0]?.[0]).toBeCloseTo(
+      Math.PI / 2,
+      10
+    )
+    expect(canvasContextMock.scale.mock.calls[0]?.[0]).toBeCloseTo(
+      120 / getMockMeasuredTextWidth('Hello OCR'),
+      6
+    )
   })
 
   it('decode 在空文本、空白文本、测量异常或非法目标宽度时回退稳定绘制', async () => {
@@ -1234,22 +1797,27 @@ describe('ImageParser', () => {
       {
         ...originalText,
         content: '',
-        width: 120
+        polygon: createTextPolygon({ x: 10, y: 20, width: 120, height: 24 })
       },
       {
         ...originalText,
         content: '   ',
-        width: 130
+        polygon: createTextPolygon({ x: 10, y: 20, width: 130, height: 24 })
       },
       {
         ...originalText,
         content: '测量异常',
-        width: 140
+        polygon: createTextPolygon({ x: 10, y: 20, width: 140, height: 24 })
       },
       {
         ...originalText,
         content: '非法宽度',
-        width: Number.NaN
+        polygon: [
+          [10, 20],
+          [10, 20],
+          [10, 20],
+          [10, 20]
+        ] as TestTextPolygon
       }
     ]
 
@@ -1302,10 +1870,14 @@ describe('ImageParser', () => {
 
     expect(serializedText?.fontWeight).toBe(600)
     expect(serializedText?.italic).toBe(true)
+    expect(serializedText?.polygon).toEqual([
+      [140, 24],
+      [240, 24],
+      [230, 56],
+      [130, 56]
+    ])
     expect(serializedText?.skew).toBeCloseTo(17.4, 1)
-    expect(serializedText?.fontSize).toBe(
-      Math.max(1, Math.round(serializedText?.height ?? 0))
-    )
+    expect(serializedText?.fontSize).toBeGreaterThan(0)
 
     const parsedDocument = IntermediateDocumentApi.parse(serialized)
     canvasContextMock.rotate.mockClear()
@@ -1315,7 +1887,7 @@ describe('ImageParser', () => {
 
     expect(decodedBuffer.byteLength).toBeGreaterThan(0)
     expect(canvasContextMock.font).toBe(
-      `italic 600 ${Math.max(1, Math.round(serializedText?.height ?? 0))}px sans-serif`
+      `italic 600 ${serializedText?.fontSize ?? 0}px sans-serif`
     )
     expect(canvasContextMock.transform).toHaveBeenCalledTimes(1)
   })

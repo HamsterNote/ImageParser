@@ -160,5 +160,52 @@ describeIfBuilt('dist 产物互操作', () => {
 
     expect(document).toBeInstanceOf(IntermediateDocument)
     expect(document.pageCount).toBe(1)
+
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+
+    expect(texts).toHaveLength(0)
+  })
+
+  it('dist 入口产出的新版文本块可被外部类型序列化', async () => {
+    mockPredict.mockImplementationOnce(async () => [
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'Hello OCR'
+          }
+        ]
+      }
+    ])
+
+    const [{ ImageParser }, { IntermediateDocument }] = await Promise.all([
+      import(pathToFileURL(distEntry).href),
+      import('@hamster-note/types')
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const serialized = await IntermediateDocument.serialize(document)
+    const serializedText = serialized.pages[0]?.texts[0]
+
+    expect(serializedText?.polygon).toEqual([
+      [10, 20],
+      [110, 20],
+      [110, 44],
+      [10, 44]
+    ])
+    expect(serializedText?.content).toBe('Hello OCR')
   })
 })

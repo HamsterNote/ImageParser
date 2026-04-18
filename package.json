@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@hamster-note/document-parser": "^0.3.0",
-    "@hamster-note/types": "^0.5.1",
+    "@hamster-note/types": "0.7.0",
     "@paddleocr/paddleocr-js": "0.3.2"
   },
   "devDependencies": {

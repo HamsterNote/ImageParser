@@ -6,6 +6,7 @@ import {
   IntermediateText,
   TextDir
 } from '@hamster-note/types'
+import type { IntermediateTextPolygon } from '@hamster-note/types'
 import type {
   OcrResultItem,
   PaddleOCR,
@@ -60,7 +61,23 @@ interface NormalizedOcrTextBlock {
   fontWeight: number
   geometry: OcrTextGeometry
   italic: boolean
+  polygon?: OrderedOcrPolygon
   skew: number
+}
+
+interface StandardizedIntermediateText {
+  ascent: number
+  baselineOrigin: OcrPoint
+  color: string
+  content: string
+  direction: CanvasDirection
+  fontFamily: string
+  fontSize: number
+  fontWeight: number
+  italic: boolean
+  rotation: number
+  skew: number
+  targetWidth?: number
 }
 
 interface OcrStyleHints {
@@ -539,6 +556,83 @@ function getPointKey([x, y]: OcrPoint): string {
   return `${x}:${y}`
 }
 
+function getPointCoordinateSum([x, y]: OcrPoint): number {
+  return x + y
+}
+
+function getPolygonCenter(points: readonly OcrPoint[]): OcrPoint {
+  const { x, y } = points.reduce(
+    (accumulator, [pointX, pointY]) => ({
+      x: accumulator.x + pointX,
+      y: accumulator.y + pointY
+    }),
+    { x: 0, y: 0 }
+  )
+
+  return [x / points.length, y / points.length]
+}
+
+function normalizeQuadrilateralPoints(
+  points: readonly OcrPoint[]
+): readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint] | undefined {
+  if (points.length !== 4) return undefined
+
+  const center = getPolygonCenter(points)
+  const angleSortedPoints = [...points].sort((left, right) => {
+    const leftAngle = Math.atan2(left[1] - center[1], left[0] - center[0])
+    const rightAngle = Math.atan2(right[1] - center[1], right[0] - center[0])
+
+    if (leftAngle !== rightAngle) return leftAngle - rightAngle
+
+    return getPointDistance(center, left) - getPointDistance(center, right)
+  })
+
+  const clockwisePoints =
+    getPolygonSignedArea(angleSortedPoints) > 0
+      ? angleSortedPoints
+      : [...angleSortedPoints].reverse()
+
+  const startIndex = clockwisePoints.reduce((bestIndex, point, index) => {
+    const bestPoint = clockwisePoints[bestIndex]
+
+    if (!bestPoint) return index
+
+    const pointSum = getPointCoordinateSum(point)
+    const bestPointSum = getPointCoordinateSum(bestPoint)
+
+    if (pointSum !== bestPointSum) {
+      return pointSum < bestPointSum ? index : bestIndex
+    }
+
+    if (point[1] !== bestPoint[1]) {
+      return point[1] < bestPoint[1] ? index : bestIndex
+    }
+
+    return point[0] < bestPoint[0] ? index : bestIndex
+  }, 0)
+
+  const [topLeft, topRight, bottomRight, bottomLeft] = clockwisePoints.map(
+    (_point, index) =>
+      clockwisePoints[(startIndex + index) % clockwisePoints.length]
+  ) as [
+    OcrPoint | undefined,
+    OcrPoint | undefined,
+    OcrPoint | undefined,
+    OcrPoint | undefined
+  ]
+
+  if (!topLeft || !topRight || !bottomRight || !bottomLeft) return undefined
+
+  const normalizedPoints: readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint] = [
+    topLeft,
+    topRight,
+    bottomRight,
+    bottomLeft
+  ]
+
+  return normalizedPoints
+}
+
 function toRawOrderedPolygon(
   points: readonly OcrPoint[]
 ): OrderedOcrPolygon | undefined {
@@ -547,7 +641,10 @@ function toRawOrderedPolygon(
   const uniquePoints = new Set(points.map((point) => getPointKey(point)))
   if (uniquePoints.size !== 4) return undefined
 
-  const [topLeft, topRight, bottomRight, bottomLeft] = points
+  const normalizedPoints = normalizeQuadrilateralPoints(points)
+  if (!normalizedPoints) return undefined
+
+  const [topLeft, topRight, bottomRight, bottomLeft] = normalizedPoints
 
   if (!topLeft || !topRight || !bottomRight || !bottomLeft) return undefined
 
@@ -608,6 +705,200 @@ function getOrderedPolygonPoints(
     polygon.bottomRight,
     polygon.bottomLeft
   ]
+}
+
+function toIntermediateTextPolygonPoint([x, y]: OcrPoint): [number, number] {
+  return [x, y]
+}
+
+function createIntermediateTextPolygonFromOrderedPolygon(
+  polygon: OrderedOcrPolygon
+): IntermediateTextPolygon {
+  return [
+    toIntermediateTextPolygonPoint(polygon.topLeft),
+    toIntermediateTextPolygonPoint(polygon.topRight),
+    toIntermediateTextPolygonPoint(polygon.bottomRight),
+    toIntermediateTextPolygonPoint(polygon.bottomLeft)
+  ]
+}
+
+function createIntermediateTextPolygonFromGeometry(
+  geometry: Pick<OcrTextGeometry, 'height' | 'rotate' | 'width' | 'x' | 'y'>
+): IntermediateTextPolygon {
+  const radians = (geometry.rotate * Math.PI) / 180
+  const cosine = Math.cos(radians)
+  const sine = Math.sin(radians)
+  const topLeft = toIntermediateTextPolygonPoint([geometry.x, geometry.y])
+  const topRight = toIntermediateTextPolygonPoint([
+    roundToSingleDecimal(geometry.x + geometry.width * cosine),
+    roundToSingleDecimal(geometry.y + geometry.width * sine)
+  ])
+  const bottomLeft = toIntermediateTextPolygonPoint([
+    roundToSingleDecimal(geometry.x - geometry.height * sine),
+    roundToSingleDecimal(geometry.y + geometry.height * cosine)
+  ])
+
+  return [
+    topLeft,
+    topRight,
+    toIntermediateTextPolygonPoint([
+      roundToSingleDecimal(topRight[0] + bottomLeft[0] - topLeft[0]),
+      roundToSingleDecimal(topRight[1] + bottomLeft[1] - topLeft[1])
+    ]),
+    bottomLeft
+  ]
+}
+
+function createIntermediateTextPolygon(
+  block: NormalizedOcrTextBlock
+): IntermediateTextPolygon {
+  return block.polygon
+    ? createIntermediateTextPolygonFromOrderedPolygon(block.polygon)
+    : createIntermediateTextPolygonFromGeometry(block.geometry)
+}
+
+function toTextPolygonPoint(value: unknown): OcrPoint | undefined {
+  const point = toPoint(value)
+  if (!point) return undefined
+  return [point[0], point[1]]
+}
+
+function toTextPolygonPoints(
+  polygon: IntermediateText['polygon']
+): readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint] | undefined {
+  if (!Array.isArray(polygon) || polygon.length !== 4) return undefined
+
+  const normalizedPoints = normalizeQuadrilateralPoints(
+    polygon
+      .map(toTextPolygonPoint)
+      .filter((point): point is OcrPoint => point !== undefined)
+  )
+
+  if (!normalizedPoints) {
+    return undefined
+  }
+
+  const [topLeft, topRight, bottomRight, bottomLeft] = normalizedPoints
+
+  if (!topLeft || !topRight || !bottomRight || !bottomLeft) {
+    return undefined
+  }
+
+  return [topLeft, topRight, bottomRight, bottomLeft]
+}
+
+function getTextAdvanceLength(
+  polygon: readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint],
+  isVertical: boolean
+): number | undefined {
+  const lengths = isVertical
+    ? [
+        getPointDistance(polygon[0], polygon[3]),
+        getPointDistance(polygon[1], polygon[2])
+      ]
+    : [
+        getPointDistance(polygon[0], polygon[1]),
+        getPointDistance(polygon[3], polygon[2])
+      ]
+  const length =
+    lengths.reduce((sum, edgeLength) => sum + edgeLength, 0) / lengths.length
+
+  return Number.isFinite(length) && length > 0 ? length : undefined
+}
+
+function getTextCrossLength(
+  polygon: readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint],
+  isVertical: boolean
+): number {
+  const lengths = isVertical
+    ? [
+        getPointDistance(polygon[0], polygon[1]),
+        getPointDistance(polygon[3], polygon[2])
+      ]
+    : [
+        getPointDistance(polygon[0], polygon[3]),
+        getPointDistance(polygon[1], polygon[2])
+      ]
+  const length =
+    lengths.reduce((sum, edgeLength) => sum + edgeLength, 0) / lengths.length
+
+  return Number.isFinite(length) && length > 0 ? length : 1
+}
+
+function createDefaultTextPolygon(): readonly [
+  OcrPoint,
+  OcrPoint,
+  OcrPoint,
+  OcrPoint
+] {
+  return [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1]
+  ]
+}
+
+function getNormalizedEdgeDirection(start: OcrPoint, end: OcrPoint): OcrPoint {
+  const length = getPointDistance(start, end)
+  if (!Number.isFinite(length) || length <= 0) return [0, 0]
+
+  return [(end[0] - start[0]) / length, (end[1] - start[1]) / length]
+}
+
+function resolveTextBaselineOrigin(
+  polygon: readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint],
+  ascent: number,
+  isVertical: boolean
+): OcrPoint {
+  const [topLeft, topRight, , bottomLeft] = polygon
+  const horizontalAxis = getNormalizedEdgeDirection(topLeft, topRight)
+  const verticalAxis = getNormalizedEdgeDirection(topLeft, bottomLeft)
+  const baselineOffset = isVertical
+    ? ([-horizontalAxis[0], -horizontalAxis[1]] as OcrPoint)
+    : verticalAxis
+
+  return [
+    roundToSingleDecimal(topLeft[0] + baselineOffset[0] * ascent),
+    roundToSingleDecimal(topLeft[1] + baselineOffset[1] * ascent)
+  ]
+}
+
+function readIntermediateText(
+  text: IntermediateText
+): StandardizedIntermediateText {
+  const polygon =
+    toTextPolygonPoints(text.polygon) ?? createDefaultTextPolygon()
+  const isVertical = text.vertical === true || text.dir === TextDir.TTB
+  const fontSize = normalizeDimension(
+    text.fontSize,
+    Math.max(1, Math.round(getTextCrossLength(polygon, isVertical)))
+  )
+  const ascent = Number.isFinite(text.ascent)
+    ? Math.max(0, text.ascent)
+    : fontSize
+  const baseRotation = getSafeAngle(
+    normalizeAngleDegrees(getAngleDegrees(polygon[0], polygon[1])),
+    MAX_TEXT_ROTATE
+  )
+
+  return {
+    ascent,
+    baselineOrigin: resolveTextBaselineOrigin(polygon, ascent, isVertical),
+    color: text.color.trim() || '#000000',
+    content: text.content,
+    direction: text.dir === TextDir.RTL ? 'rtl' : 'ltr',
+    fontFamily: text.fontFamily.trim() || DEFAULT_FONT_FAMILY,
+    fontSize,
+    fontWeight: getSafeFontWeight(text.fontWeight),
+    italic: text.italic === true,
+    rotation: getSafeAngle(
+      isVertical ? normalizeAngleDegrees(baseRotation + 90) : baseRotation,
+      MAX_TEXT_ROTATE
+    ),
+    skew: getSafeAngle(text.skew, MAX_TEXT_SKEW),
+    targetWidth: getTextAdvanceLength(polygon, isVertical)
+  }
 }
 
 function getPolygonSignedArea(points: readonly OcrPoint[]): number {
@@ -950,6 +1241,7 @@ function normalizeOcrResult(
       fontWeight,
       geometry: geometryResult.geometry,
       italic: geometryStyleHints.italic,
+      polygon: geometryResult.polygon,
       skew: geometryStyleHints.skew
     })
 
@@ -978,6 +1270,7 @@ function createOcrText(
   const fontSize = Math.max(1, Math.round(block.geometry.height * 0.8))
   const lineHeight = Math.max(fontSize, Math.round(block.geometry.height))
   const ascent = Math.round(lineHeight * 0.75)
+  const polygon = createIntermediateTextPolygon(block)
 
   return new IntermediateText({
     id: `image-parser-ocr-text-${index + 1}`,
@@ -987,15 +1280,12 @@ function createOcrText(
     fontWeight: block.fontWeight,
     italic: block.italic,
     color: '#000000',
-    width: block.geometry.width * 0.98,
-    height: block.geometry.height * 0.98,
+    polygon,
     lineHeight,
-    x: block.geometry.x,
-    y: block.geometry.y,
     ascent,
     descent: Math.max(0, lineHeight - ascent),
+    vertical: false,
     dir: TextDir.LTR,
-    rotate: block.geometry.rotate,
     skew: block.skew,
     isEOL: true
   })
@@ -1063,52 +1353,54 @@ function getSafeFontWeight(value: number): number {
   return roundedValue
 }
 
-function getCanvasTextFont(text: IntermediateText): string {
-  const style = text.italic === true ? 'italic ' : ''
-  const weight = `${getSafeFontWeight(text.fontWeight)} `
-  const size = normalizeDimension(
-    text.fontSize,
-    Math.max(1, Math.round(text.height))
-  )
-  const family = text.fontFamily.trim() || DEFAULT_FONT_FAMILY
+function getCanvasTextFont(text: StandardizedIntermediateText): string {
+  const style = text.italic ? 'italic ' : ''
+  const weight = `${text.fontWeight} `
+  const size = `${text.fontSize}px `
 
-  return `${style}${weight}${size}px ${family}`.trim()
+  return `${style}${weight}${size}${text.fontFamily}`.trim()
 }
 
-function getCanvasTextColor(text: IntermediateText): string {
-  const color = text.color.trim()
-  return color ? color : '#000000'
+function getCanvasTextColor(text: StandardizedIntermediateText): string {
+  return text.color
 }
 
-function getCanvasTextBaselineY(text: IntermediateText): number {
-  const y = Number.isFinite(text.y) ? text.y : 0
-  const ascent = Number.isFinite(text.ascent)
-    ? Math.max(0, text.ascent)
-    : normalizeDimension(text.fontSize, Math.max(1, Math.round(text.height)))
-
-  return y + ascent
+function getCanvasTextBaselineY(text: StandardizedIntermediateText): number {
+  return text.baselineOrigin[1]
 }
 
-function getCanvasTextDirection(text: IntermediateText): CanvasDirection {
-  return text.dir === TextDir.RTL ? 'rtl' : 'ltr'
+function getCanvasTextDirection(
+  text: StandardizedIntermediateText
+): CanvasDirection {
+  return text.direction
 }
 
-function getCanvasTextTargetWidth(text: IntermediateText): number | undefined {
-  return Number.isFinite(text.width) && text.width > 0 ? text.width : undefined
+function getCanvasTextTargetWidth(
+  text: StandardizedIntermediateText
+): number | undefined {
+  const targetWidth = text.targetWidth
+
+  return targetWidth !== undefined &&
+    Number.isFinite(targetWidth) &&
+    targetWidth > 0
+    ? targetWidth
+    : undefined
 }
 
-function getCanvasTextFallbackMaxWidth(text: IntermediateText): number {
+function getCanvasTextFallbackMaxWidth(
+  text: StandardizedIntermediateText
+): number {
   return getCanvasTextTargetWidth(text) ?? 1
 }
 
 function measureCanvasTextNaturalWidth(
   context: Pick<CanvasRenderingContext2D, 'measureText'>,
-  text: IntermediateText
+  content: string
 ): number | undefined {
-  if (text.content.trim().length === 0) return undefined
+  if (content.trim().length === 0) return undefined
 
   try {
-    const measuredWidth = context.measureText(text.content).width
+    const measuredWidth = context.measureText(content).width
     return Number.isFinite(measuredWidth) && measuredWidth > 0
       ? measuredWidth
       : undefined
@@ -1127,15 +1419,12 @@ function getCanvasTextScaleX(
   return Number.isFinite(scaleX) && scaleX > 0 ? scaleX : undefined
 }
 
-function getCanvasTextRotation(text: IntermediateText): number {
-  const baseRotate = getSafeAngle(text.rotate, MAX_TEXT_ROTATE)
-  return text.vertical || text.dir === TextDir.TTB
-    ? baseRotate + 90
-    : baseRotate
+function getCanvasTextRotation(text: StandardizedIntermediateText): number {
+  return text.rotation
 }
 
-function getCanvasTextSkew(text: IntermediateText): number {
-  return getSafeAngle(text.skew, MAX_TEXT_SKEW)
+function getCanvasTextSkew(text: StandardizedIntermediateText): number {
+  return text.skew
 }
 
 function drawDecodedPage(
@@ -1155,17 +1444,18 @@ function drawDecodedPage(
   context.fillRect(0, 0, pageSize.width, pageSize.height)
 
   for (const text of texts) {
-    const x = Number.isFinite(text.x) ? text.x : 0
-    const baselineY = getCanvasTextBaselineY(text)
-    const rotation = getCanvasTextRotation(text)
-    const skew = getCanvasTextSkew(text)
-    const fallbackMaxWidth = getCanvasTextFallbackMaxWidth(text)
+    const standardizedText = readIntermediateText(text)
+    const x = standardizedText.baselineOrigin[0]
+    const baselineY = getCanvasTextBaselineY(standardizedText)
+    const rotation = getCanvasTextRotation(standardizedText)
+    const skew = getCanvasTextSkew(standardizedText)
+    const fallbackMaxWidth = getCanvasTextFallbackMaxWidth(standardizedText)
 
     context.save()
-    context.font = getCanvasTextFont(text)
-    context.fillStyle = getCanvasTextColor(text)
+    context.font = getCanvasTextFont(standardizedText)
+    context.fillStyle = getCanvasTextColor(standardizedText)
     context.textBaseline = 'alphabetic'
-    context.direction = getCanvasTextDirection(text)
+    context.direction = getCanvasTextDirection(standardizedText)
     context.translate(x, baselineY)
 
     if (rotation !== 0) {
@@ -1177,8 +1467,8 @@ function drawDecodedPage(
     }
 
     const scaleX = getCanvasTextScaleX(
-      getCanvasTextTargetWidth(text),
-      measureCanvasTextNaturalWidth(context, text)
+      getCanvasTextTargetWidth(standardizedText),
+      measureCanvasTextNaturalWidth(context, standardizedText.content)
     )
 
     if (scaleX !== undefined) {
@@ -1186,9 +1476,9 @@ function drawDecodedPage(
         context.scale(scaleX, 1)
       }
 
-      context.fillText(text.content, 0, 0)
+      context.fillText(standardizedText.content, 0, 0)
     } else {
-      context.fillText(text.content, 0, 0, fallbackMaxWidth)
+      context.fillText(standardizedText.content, 0, 0, fallbackMaxWidth)
     }
 
     context.restore()

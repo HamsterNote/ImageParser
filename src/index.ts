@@ -597,13 +597,6 @@ function normalizeQuadrilateralPoints(
 
     if (!bestPoint) return index
 
-    const pointSum = getPointCoordinateSum(point)
-    const bestPointSum = getPointCoordinateSum(bestPoint)
-
-    if (pointSum !== bestPointSum) {
-      return pointSum < bestPointSum ? index : bestIndex
-    }
-
     if (point[1] !== bestPoint[1]) {
       return point[1] < bestPoint[1] ? index : bestIndex
     }
@@ -859,8 +852,8 @@ function resolveTextBaselineOrigin(
     : verticalAxis
 
   return [
-    roundToSingleDecimal(topLeft[0] + baselineOffset[0] * ascent),
-    roundToSingleDecimal(topLeft[1] + baselineOffset[1] * ascent)
+    topLeft[0] + baselineOffset[0] * ascent,
+    topLeft[1] + baselineOffset[1] * ascent
   ]
 }
 

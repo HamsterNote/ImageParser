@@ -16,6 +16,12 @@ type OcrResult = {
   }>
 }
 
+type SampleRegionConfig = {
+  darkRatio: number
+  highLuminance?: number
+  lowLuminance?: number
+}
+
 type CanvasBehavior = 'success' | 'no-context' | 'empty-blob'
 type ImageBehavior = 'load' | 'error'
 
@@ -39,12 +45,15 @@ jest.unstable_mockModule('@paddleocr/paddleocr-js', () => ({
 let ImageParser: typeof import('../index').ImageParser
 let inspectImage: typeof import('../index').inspectImage
 let disposePaddleOcrRuntimeForTesting: typeof import('../index').__disposePaddleOcrRuntimeForTesting
+let IntermediateDocumentApi: typeof import('@hamster-note/types').IntermediateDocument
 
 const defaultImageWidth = 320
 const defaultImageHeight = 180
 
 let canvasBehavior: CanvasBehavior = 'success'
 let canvasContextMock: {
+  beginPath: ReturnType<typeof jest.fn>
+  closePath: ReturnType<typeof jest.fn>
   clearRect: ReturnType<typeof jest.fn>
   drawImage: ReturnType<typeof jest.fn>
   direction: CanvasDirection
@@ -52,10 +61,14 @@ let canvasContextMock: {
   fillStyle: string
   fillText: ReturnType<typeof jest.fn>
   font: string
+  getImageData: ReturnType<typeof jest.fn>
+  lineTo: ReturnType<typeof jest.fn>
   lineWidth: number
+  moveTo: ReturnType<typeof jest.fn>
   restore: ReturnType<typeof jest.fn>
   rotate: ReturnType<typeof jest.fn>
   save: ReturnType<typeof jest.fn>
+  stroke: ReturnType<typeof jest.fn>
   strokeRect: ReturnType<typeof jest.fn>
   strokeStyle: string
   textBaseline: CanvasTextBaseline
@@ -74,6 +87,8 @@ let hadDocument = false
 let hadImage = false
 let hadCreateObjectURL = false
 let hadRevokeObjectURL = false
+let latestSampleRegionKey: string | undefined
+let sampleRegionConfigMap: Map<string, SampleRegionConfig>
 
 class MockImage {
   onerror: ((event: Event) => void) | null = null
@@ -102,13 +117,87 @@ class MockImage {
   }
 }
 
+function createSampleRegionKey(
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): string {
+  return [x, y, width, height].map((value) => value.toFixed(1)).join(':')
+}
+
+function createSampleImageData(
+  width: number,
+  height: number,
+  config: SampleRegionConfig
+): Uint8ClampedArray {
+  const size = Math.max(1, width * height)
+  const darkPixels = Math.round(size * config.darkRatio)
+  const highLuminance = config.highLuminance ?? 240
+  const lowLuminance = config.lowLuminance ?? 32
+  const data = new Uint8ClampedArray(size * 4)
+
+  for (let index = 0; index < size; index += 1) {
+    const luminance = index < darkPixels ? lowLuminance : highLuminance
+    const offset = index * 4
+    data[offset] = luminance
+    data[offset + 1] = luminance
+    data[offset + 2] = luminance
+    data[offset + 3] = 255
+  }
+
+  return data
+}
+
+function setSampleRegionConfig(
+  region: { height: number; width: number; x: number; y: number },
+  config: SampleRegionConfig
+): void {
+  sampleRegionConfigMap.set(
+    createSampleRegionKey(region.x, region.y, region.width, region.height),
+    config
+  )
+}
+
+function getSampleRegionConfig(
+  regionKey: string | undefined
+): SampleRegionConfig | undefined {
+  if (!regionKey) return undefined
+
+  const exactConfig = sampleRegionConfigMap.get(regionKey)
+  if (exactConfig) return exactConfig
+
+  const [x, y, width, height] = regionKey.split(':').map(Number)
+  if ([x, y, width, height].some((value) => !Number.isFinite(value))) {
+    return undefined
+  }
+
+  for (const [candidateKey, config] of sampleRegionConfigMap.entries()) {
+    const [candidateX, candidateY, candidateWidth, candidateHeight] =
+      candidateKey.split(':').map(Number)
+
+    if (
+      Math.abs(candidateX - x) <= 1 &&
+      Math.abs(candidateY - y) <= 1 &&
+      Math.abs(candidateWidth - width) <= 2 &&
+      Math.abs(candidateHeight - height) <= 2
+    ) {
+      return config
+    }
+  }
+
+  return undefined
+}
+
 beforeAll(async () => {
   const imageParserModule = await import('../index')
+  const typesModule = await import('@hamster-note/types')
 
   ImageParser = imageParserModule.ImageParser
   inspectImage = imageParserModule.inspectImage
   disposePaddleOcrRuntimeForTesting =
     imageParserModule.__disposePaddleOcrRuntimeForTesting
+  IntermediateDocumentApi = typesModule.IntermediateDocument
 })
 
 beforeEach(() => {
@@ -128,18 +217,54 @@ beforeEach(() => {
   mockPredict.mockReset()
   mockPredict.mockImplementation(async () => [{ items: [] }])
 
+  latestSampleRegionKey = undefined
+  sampleRegionConfigMap = new Map()
+
   canvasContextMock = {
+    beginPath: jest.fn(),
+    closePath: jest.fn(),
     clearRect: jest.fn(),
-    drawImage: jest.fn(),
+    drawImage: jest.fn((...args: unknown[]) => {
+      if (args.length !== 9) return
+
+      const [, sx, sy, sw, sh] = args as [
+        HTMLImageElement,
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+        number
+      ]
+      latestSampleRegionKey = createSampleRegionKey(sx, sy, sw, sh)
+    }),
     direction: 'ltr',
     fillRect: jest.fn(),
     fillStyle: '',
     fillText: jest.fn(),
     font: '',
+    getImageData: jest.fn(
+      (_x: number, _y: number, width: number, height: number) => {
+        const config = getSampleRegionConfig(latestSampleRegionKey) ?? {
+          darkRatio: 0.08
+        }
+
+        return {
+          data: createSampleImageData(width, height, config),
+          height,
+          width
+        } as ImageData
+      }
+    ),
+    lineTo: jest.fn(),
     lineWidth: 0,
+    moveTo: jest.fn(),
     restore: jest.fn(),
     rotate: jest.fn(),
     save: jest.fn(),
+    stroke: jest.fn(),
     strokeRect: jest.fn(),
     strokeStyle: '',
     textBaseline: 'alphabetic',
@@ -278,7 +403,11 @@ describe('ImageParser', () => {
     const texts = await firstPage.getTexts()
     const text = texts[0] as unknown as {
       content: string
+      fontWeight: number
       height: number
+      italic: boolean
+      rotate: number
+      skew: number
       width: number
       x: number
       y: number
@@ -293,6 +422,10 @@ describe('ImageParser', () => {
     expect(text.y).toBe(20)
     expect(text.width).toBe(100)
     expect(text.height).toBe(24)
+    expect(text.fontWeight).toBe(400)
+    expect(text.italic).toBe(false)
+    expect(text.rotate).toBe(0)
+    expect(text.skew).toBe(0)
   })
 
   it('encode 空识别结果时返回空文本页', async () => {
@@ -312,7 +445,7 @@ describe('ImageParser', () => {
     expect(texts).toHaveLength(0)
   })
 
-  it('encode 会过滤空文本、缺失坐标和非法多边形项', async () => {
+  it('encode 会过滤空文本并为非法 poly 提供安全回退', async () => {
     mockPredict.mockResolvedValueOnce([
       {
         items: [
@@ -327,10 +460,7 @@ describe('ImageParser', () => {
             text: '   '
           },
           {
-            poly: [
-              [0, 0],
-              [10, 10]
-            ],
+            poly: [[0, 0]],
             score: 0.87,
             text: 'invalid-poly'
           },
@@ -357,20 +487,199 @@ describe('ImageParser', () => {
     }
 
     const texts = await firstPage.getTexts()
-    const text = texts[0] as unknown as {
+    const invalidPolyText = texts[0] as unknown as {
       content: string
       height: number
+      rotate: number
+      width: number
+      x: number
+      y: number
+    }
+    const validText = texts[1] as unknown as {
+      content: string
+      height: number
+      rotate: number
       width: number
       x: number
       y: number
     }
 
-    expect(texts).toHaveLength(1)
-    expect(text.content).toBe('valid text')
-    expect(text.x).toBe(5)
-    expect(text.y).toBe(6)
-    expect(text.width).toBe(100)
-    expect(text.height).toBe(30)
+    expect(texts).toHaveLength(2)
+    expect(invalidPolyText.content).toBe('invalid-poly')
+    expect(invalidPolyText.x).toBe(0)
+    expect(invalidPolyText.y).toBe(0)
+    expect(invalidPolyText.width).toBe(1)
+    expect(invalidPolyText.height).toBe(1)
+    expect(invalidPolyText.rotate).toBe(0)
+    expect(validText.content).toBe('valid text')
+    expect(validText.x).toBe(5)
+    expect(validText.y).toBe(6)
+    expect(validText.width).toBe(100)
+    expect(validText.height).toBe(30)
+  })
+
+  it('encode 会对旋转、斜体与异常样式线索执行稳定映射', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 46],
+              [104, 70],
+              [4, 44]
+            ],
+            score: 0.98,
+            text: 'rotated'
+          },
+          {
+            poly: [
+              [130, 20],
+              [230, 20],
+              [220, 52],
+              [120, 52]
+            ],
+            score: 0.95,
+            text: 'italic'
+          },
+          {
+            poly: [
+              [20, 100],
+              [120, 132]
+            ],
+            score: 0.9,
+            text: 'fallback'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = (await firstPage.getTexts()) as Array<{
+      content: string
+      fontWeight: number
+      italic: boolean
+      rotate: number
+      skew: number
+      width: number
+      x: number
+      y: number
+    }>
+    const rotatedText = texts.find((text) => text.content === 'rotated')
+    const italicText = texts.find((text) => text.content === 'italic')
+    const fallbackText = texts.find((text) => text.content === 'fallback')
+
+    expect(rotatedText).toBeDefined()
+    expect(rotatedText?.rotate).toBeCloseTo(14.6, 1)
+    expect(rotatedText?.italic).toBe(false)
+    expect(Math.abs(rotatedText?.skew ?? 0)).toBeLessThan(1)
+
+    expect(italicText).toBeDefined()
+    expect(italicText?.rotate).toBe(0)
+    expect(italicText?.italic).toBe(true)
+    expect(italicText?.skew).toBeCloseTo(17.4, 1)
+
+    expect(fallbackText).toBeDefined()
+    expect(fallbackText?.x).toBe(20)
+    expect(fallbackText?.y).toBe(100)
+    expect(fallbackText?.width).toBe(100)
+    expect(fallbackText?.fontWeight).toBe(400)
+    expect(fallbackText?.italic).toBe(false)
+    expect(fallbackText?.rotate).toBe(0)
+    expect(fallbackText?.skew).toBe(0)
+  })
+
+  it('encode 对旋转框、轻微梯形与非法 poly 输出稳定几何', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 46],
+              [104, 70],
+              [4, 44]
+            ],
+            score: 0.98,
+            text: 'rotated geometry'
+          },
+          {
+            poly: [
+              [140, 20],
+              [242, 24],
+              [236, 56],
+              [136, 52]
+            ],
+            score: 0.95,
+            text: 'trapezoid geometry'
+          },
+          {
+            poly: [
+              [200, 40],
+              [260, 40],
+              [260, 40],
+              [200, 60]
+            ],
+            score: 0.88,
+            text: 'fallback geometry'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = (await firstPage.getTexts()) as Array<{
+      content: string
+      height: number
+      rotate: number
+      width: number
+      x: number
+      y: number
+    }>
+    const rotatedText = texts.find(
+      (text) => text.content === 'rotated geometry'
+    )
+    const trapezoidText = texts.find(
+      (text) => text.content === 'trapezoid geometry'
+    )
+    const fallbackText = texts.find(
+      (text) => text.content === 'fallback geometry'
+    )
+
+    expect(rotatedText).toBeDefined()
+    expect(rotatedText?.x).toBe(10)
+    expect(rotatedText?.y).toBe(20)
+    expect(rotatedText?.width).toBeCloseTo(103.3, 1)
+    expect(rotatedText?.height).toBeCloseTo(24.7, 1)
+    expect(rotatedText?.rotate).toBeCloseTo(14.6, 1)
+
+    expect(trapezoidText).toBeDefined()
+    expect(trapezoidText?.x).toBe(140)
+    expect(trapezoidText?.y).toBe(20)
+    expect(trapezoidText?.width).toBeCloseTo(101.1, 1)
+    expect(trapezoidText?.height).toBeCloseTo(32.4, 1)
+    expect(trapezoidText?.rotate).toBeCloseTo(2.3, 1)
+
+    expect(fallbackText).toBeDefined()
+    expect(fallbackText?.x).toBe(200)
+    expect(fallbackText?.y).toBe(40)
+    expect(fallbackText?.width).toBe(60)
+    expect(fallbackText?.height).toBe(20)
+    expect(fallbackText?.rotate).toBe(0)
   })
 
   it('OCR 推理失败时提示明确错误', async () => {
@@ -593,6 +902,11 @@ describe('ImageParser', () => {
       'data:image/png;base64,AQIDBA=='
     )
 
+    canvasContextMock.drawImage.mockClear()
+    canvasContextMock.translate.mockClear()
+    canvasContextMock.fillRect.mockClear()
+    canvasContextMock.fillText.mockClear()
+
     const decodedBuffer = await ImageParser.decode(document)
 
     expect(decodedBuffer.byteLength).toBeGreaterThan(0)
@@ -700,6 +1014,10 @@ describe('ImageParser', () => {
     })
 
     firstPage.getTexts = async () => [clippedText]
+    canvasContextMock.translate.mockClear()
+    canvasContextMock.rotate.mockClear()
+    canvasContextMock.transform.mockClear()
+    canvasContextMock.fillText.mockClear()
 
     const decodedBuffer = await ImageParser.decode(document)
 
@@ -719,6 +1037,125 @@ describe('ImageParser', () => {
       0,
       0
     )
+  })
+
+  it('decode 对缺失或异常样式值执行安全回退', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [8, 10],
+              [108, 10],
+              [108, 30],
+              [8, 30]
+            ],
+            score: 0.94,
+            text: 'safe fallback'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const originalText = (await firstPage.getTexts())[0]
+
+    if (!originalText) {
+      throw new Error('缺少 OCR 文本块')
+    }
+
+    const fallbackText = {
+      ...originalText,
+      color: '#654321',
+      content: 'safe fallback',
+      fontFamily: 'Mock Sans',
+      fontSize: 20,
+      fontWeight: Number.POSITIVE_INFINITY,
+      height: 20,
+      italic: 'invalid' as unknown as boolean,
+      rotate: 999,
+      skew: Number.NaN,
+      x: 8,
+      y: 10
+    }
+
+    firstPage.getTexts = async () => [fallbackText]
+    canvasContextMock.rotate.mockClear()
+    canvasContextMock.transform.mockClear()
+    canvasContextMock.fillText.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(canvasContextMock.font).toBe('400 20px Mock Sans')
+    expect(canvasContextMock.fillStyle).toBe('#654321')
+    expect(canvasContextMock.rotate).not.toHaveBeenCalled()
+    expect(canvasContextMock.transform).not.toHaveBeenCalled()
+    expect(canvasContextMock.fillText).toHaveBeenCalledWith(
+      'safe fallback',
+      0,
+      0,
+      100
+    )
+  })
+
+  it('文档序列化后仍可保留样式字段并继续解码', async () => {
+    setSampleRegionConfig(
+      {
+        x: 130,
+        y: 24,
+        width: 110,
+        height: 32
+      },
+      { darkRatio: 0.15 }
+    )
+
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [140, 24],
+              [240, 24],
+              [230, 56],
+              [130, 56]
+            ],
+            score: 0.96,
+            text: 'serialized style'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const serialized = await IntermediateDocumentApi.serialize(document)
+    const serializedText = serialized.pages[0]?.texts[0]
+
+    expect(serializedText?.fontWeight).toBe(600)
+    expect(serializedText?.italic).toBe(true)
+    expect(serializedText?.skew).toBeCloseTo(17.4, 1)
+    expect(serializedText?.fontSize).toBe(
+      Math.max(1, Math.round(serializedText?.height ?? 0))
+    )
+
+    const parsedDocument = IntermediateDocumentApi.parse(serialized)
+    canvasContextMock.rotate.mockClear()
+    canvasContextMock.transform.mockClear()
+
+    const decodedBuffer = await ImageParser.decode(parsedDocument)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(canvasContextMock.font).toBe(
+      `italic 600 ${Math.max(1, Math.round(serializedText?.height ?? 0))}px sans-serif`
+    )
+    expect(canvasContextMock.transform).toHaveBeenCalledTimes(1)
   })
 
   it('global Blob 不可用时仍可识别 array-buffer-view', async () => {

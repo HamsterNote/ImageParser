@@ -164,6 +164,61 @@ const getPreviewLineWidth = (pageWidth, pageHeight) => {
   return Math.max(1, Math.round(Math.max(pageWidth, pageHeight) / 240))
 }
 
+const hasNonDefaultStyleValue = (value, defaultValue = 0) => {
+  return Number.isFinite(value) && value !== defaultValue
+}
+
+const getSafeAngle = (value, maxAbs = 180) => {
+  if (!Number.isFinite(value)) return 0
+  if (Math.abs(value) > maxAbs) return 0
+  return value
+}
+
+const formatOverlayStyleLabel = (text) => {
+  const labels = []
+
+  if (hasNonDefaultStyleValue(text.fontWeight, 400)) {
+    labels.push(`w${Math.round(text.fontWeight)}`)
+  }
+
+  if (text.italic === true) {
+    labels.push('italic')
+  }
+
+  if (hasNonDefaultStyleValue(text.rotate, 0)) {
+    labels.push(`r${Math.round(text.rotate)}`)
+  }
+
+  if (hasNonDefaultStyleValue(text.skew, 0)) {
+    labels.push(`s${Math.round(text.skew)}`)
+  }
+
+  return labels.join(' ')
+}
+
+const countStyledTexts = (texts) => {
+  return texts.filter((text) => formatOverlayStyleLabel(text).length > 0).length
+}
+
+const extractRecognizedTexts = (snapshot) => {
+  return snapshot.pages.flatMap((page, pageIndex) => {
+    return page.texts.map((text, textIndex) => ({
+      content: text.content,
+      fontSize: text.fontSize,
+      fontWeight: text.fontWeight,
+      height: text.height,
+      italic: text.italic,
+      order: textIndex + 1,
+      page: pageIndex + 1,
+      rotate: text.rotate,
+      skew: text.skew,
+      width: text.width,
+      x: text.x,
+      y: text.y
+    }))
+  })
+}
+
 const resetOverlayPreview = (message) => {
   if (overlayPreview instanceof HTMLCanvasElement) {
     const context = overlayPreview.getContext('2d')
@@ -228,22 +283,55 @@ const getFirstPageData = async (document) => {
   }
 }
 
-const clampBoundingBox = (text, pageWidth, pageHeight) => {
+const normalizePositiveSize = (value, fallback = 1) => {
+  if (!Number.isFinite(value) || value <= 0) return fallback
+  return Math.max(fallback, value)
+}
+
+const getOverlayPolygon = (text, pageWidth, pageHeight) => {
   const x = Number.isFinite(text.x) ? text.x : 0
   const y = Number.isFinite(text.y) ? text.y : 0
-  const width = normalizeDimension(text.width, 1)
-  const height = normalizeDimension(text.height, 1)
   const left = clamp(x, 0, Math.max(0, pageWidth - 1))
   const top = clamp(y, 0, Math.max(0, pageHeight - 1))
-  const right = clamp(x + width, left + 1, pageWidth)
-  const bottom = clamp(y + height, top + 1, pageHeight)
+  const width = normalizePositiveSize(text.width)
+  const height = normalizePositiveSize(text.height)
+  const radians = (getSafeAngle(text.rotate, 180) * Math.PI) / 180
+  const cosine = Math.cos(radians)
+  const sine = Math.sin(radians)
+  const clampPoint = ({ x: pointX, y: pointY }) => ({
+    x: clamp(pointX, 0, pageWidth),
+    y: clamp(pointY, 0, pageHeight)
+  })
+  const topLeft = { x: left, y: top }
+  const topRight = {
+    x: left + width * cosine,
+    y: top + width * sine
+  }
+  const bottomLeft = {
+    x: left - height * sine,
+    y: top + height * cosine
+  }
+  const bottomRight = {
+    x: topRight.x - height * sine,
+    y: topRight.y + height * cosine
+  }
 
   return {
-    height: Math.max(1, bottom - top),
-    width: Math.max(1, right - left),
-    x: left,
-    y: top
+    topLeft: clampPoint(topLeft),
+    topRight: clampPoint(topRight),
+    bottomRight: clampPoint(bottomRight),
+    bottomLeft: clampPoint(bottomLeft)
   }
+}
+
+const strokeOverlayPolygon = (context, polygon) => {
+  context.beginPath()
+  context.moveTo(polygon.topLeft.x, polygon.topLeft.y)
+  context.lineTo(polygon.topRight.x, polygon.topRight.y)
+  context.lineTo(polygon.bottomRight.x, polygon.bottomRight.y)
+  context.lineTo(polygon.bottomLeft.x, polygon.bottomLeft.y)
+  context.closePath()
+  context.stroke()
 }
 
 const renderOverlayPreview = async (document) => {
@@ -262,11 +350,22 @@ const renderOverlayPreview = async (document) => {
   context.clearRect(0, 0, page.width, page.height)
   context.drawImage(image, 0, 0, page.width, page.height)
   context.strokeStyle = '#ff3b30'
+  context.fillStyle = 'rgba(255, 59, 48, 0.88)'
   context.lineWidth = getPreviewLineWidth(page.width, page.height)
+  context.font = `${Math.max(12, context.lineWidth * 10)}px sans-serif`
 
   for (const text of page.texts) {
-    const box = clampBoundingBox(text, page.width, page.height)
-    context.strokeRect(box.x, box.y, box.width, box.height)
+    const polygon = getOverlayPolygon(text, page.width, page.height)
+
+    context.save()
+    strokeOverlayPolygon(context, polygon)
+
+    const styleLabel = formatOverlayStyleLabel(text)
+    if (styleLabel) {
+      context.fillText(styleLabel, polygon.topLeft.x, polygon.topLeft.y - 4)
+    }
+
+    context.restore()
   }
 
   overlayPreview.hidden = false
@@ -338,6 +437,10 @@ const handleInspect = async () => {
     const inspection = await ImageParser.inspect(image)
     const document = await ImageParser.encode(image)
     const documentSnapshot = await createDocumentSnapshot(document)
+    const recognizedTexts = extractRecognizedTexts(documentSnapshot.value)
+    const styledTextCount = countStyledTexts(
+      documentSnapshot.value.pages.flatMap((page) => page.texts)
+    )
 
     latestDocument = documentSnapshot.parsed
     await renderOverlayPreview(documentSnapshot.parsed)
@@ -346,12 +449,14 @@ const handleInspect = async () => {
     setSummary(
       documentSnapshot.emptyResult
         ? 'OCR 成功，但未识别到文字；下方预览与 Decode 将基于右侧中间文档展示。'
-        : 'OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。'
+        : `OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 ${styledTextCount} 个带样式线索的文本块。`
     )
     setOutput(rawOutput, {
       inspection,
       note: '已跳过额外原始 OCR 推理，以避免同一张图片执行两次识别导致页面卡顿。',
       pageCount: documentSnapshot.value.pages.length,
+      recognizedTexts,
+      styledTextCount,
       textCount: documentSnapshot.textCount
     })
     setOutput(documentOutput, {
@@ -383,7 +488,7 @@ const handleDecode = async () => {
 
   setDecodeEnabled(false)
   setStatus('Decoding...')
-  setSummary('正在基于右侧中间文档调用 ImageParser.decode() 导出带标注的图片。')
+  setSummary('正在基于右侧中间文档调用 ImageParser.decode() 导出解码图片。')
   resetDecodeResult('Decoding...')
 
   try {

@@ -37,6 +37,15 @@ interface BoundingBox {
   height: number
 }
 
+interface OcrTextGeometry {
+  x: number
+  y: number
+  width: number
+  height: number
+  rotate: number
+  sampleBox: BoundingBox
+}
+
 type OcrPoint = readonly [number, number]
 
 interface RenderCanvas {
@@ -47,8 +56,29 @@ interface RenderCanvas {
 }
 
 interface NormalizedOcrTextBlock {
-  box: BoundingBox
   content: string
+  fontWeight: number
+  geometry: OcrTextGeometry
+  italic: boolean
+  skew: number
+}
+
+interface OcrStyleHints {
+  italic: boolean
+  skew: number
+}
+
+interface OrderedOcrPolygon {
+  bottomLeft: OcrPoint
+  bottomRight: OcrPoint
+  topLeft: OcrPoint
+  topRight: OcrPoint
+}
+
+interface PixelSampleStats {
+  contrast: number
+  darkPixelRatio: number
+  opaquePixelCount: number
 }
 
 type PaddleOcrModule = typeof import('@paddleocr/paddleocr-js')
@@ -68,6 +98,10 @@ interface PaddleOcrFactory {
 
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png'
 const DEFAULT_FONT_FAMILY = 'sans-serif'
+const DEFAULT_TEXT_FONT_WEIGHT = 400
+const DEFAULT_TEXT_ITALIC = false
+const DEFAULT_TEXT_ROTATE = 0
+const DEFAULT_TEXT_SKEW = 0
 const DEFAULT_PADDLE_OCR_OPTIONS = {
   worker: false,
   unsupportedBehavior: 'error',
@@ -83,6 +117,18 @@ const DEFAULT_PADDLE_OCR_OPTIONS = {
 } satisfies PaddleOCRCreateOptions
 const PNG_SIGNATURE = [137, 80, 78, 71] as const
 const JPEG_SIGNATURE = [255, 216, 255] as const
+const MAX_TEXT_ROTATE = 180
+const MAX_TEXT_SKEW = 45
+const MIN_GEOMETRY_EDGE_LENGTH = 2
+const MAX_PARALLEL_ANGLE_DELTA = 12
+const MAX_SIDE_ANGLE_DELTA = 12
+const MAX_SKEW_SIDE_DELTA = 8
+const ITALIC_SKEW_THRESHOLD = 8
+const MAX_ITALIC_SKEW = 24
+const MIN_PIXEL_SAMPLE_CONTRAST = 24
+const MIN_PIXEL_SAMPLE_SIZE = 16
+const MAX_PIXEL_SAMPLE_SIZE = 96
+const FONT_WEIGHT_BUCKETS = [400, 500, 600, 700] as const
 
 let paddleOcrInstancePromise: Promise<PaddleOcrInstance> | undefined
 
@@ -160,6 +206,14 @@ function detectImageMimeType(bytes: Uint8Array): string | undefined {
 function normalizeDimension(value: number, fallback: number): number {
   if (!Number.isFinite(value) || value <= 0) return fallback
   return Math.max(1, Math.round(value))
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function roundToSingleDecimal(value: number): number {
+  return Math.round(value * 10) / 10
 }
 
 function parseDataUrlMimeType(value: string): string | undefined {
@@ -426,12 +480,22 @@ function toPointList(value: unknown): readonly OcrPoint[] {
   }, [])
 }
 
-function toBoundingBox(
-  value: unknown,
+function toBoundingBoxFromPoints(
+  points: readonly OcrPoint[],
   image: Pick<DecodedImage, 'width' | 'height'>
 ): BoundingBox | undefined {
-  const points = toPointList(value)
-  if (points.length < 3) return undefined
+  if (points.length === 0) return undefined
+
+  if (points.length === 1) {
+    const [pointX, pointY] = points[0]
+
+    return {
+      x: clampNumber(pointX, 0, Math.max(0, image.width - 1)),
+      y: clampNumber(pointY, 0, Math.max(0, image.height - 1)),
+      width: 1,
+      height: 1
+    }
+  }
 
   const xs = points.map(([x]) => x)
   const ys = points.map(([, y]) => y)
@@ -459,9 +523,404 @@ function toBoundingBox(
   }
 }
 
+function getDefaultOcrStyleHints(): OcrStyleHints {
+  return {
+    italic: DEFAULT_TEXT_ITALIC,
+    skew: DEFAULT_TEXT_SKEW
+  }
+}
+
+function getPointKey([x, y]: OcrPoint): string {
+  return `${x}:${y}`
+}
+
+function toRawOrderedPolygon(
+  points: readonly OcrPoint[]
+): OrderedOcrPolygon | undefined {
+  if (points.length !== 4) return undefined
+
+  const uniquePoints = new Set(points.map((point) => getPointKey(point)))
+  if (uniquePoints.size !== 4) return undefined
+
+  const [topLeft, topRight, bottomRight, bottomLeft] = points
+
+  if (!topLeft || !topRight || !bottomRight || !bottomLeft) return undefined
+
+  return {
+    topLeft,
+    topRight,
+    bottomRight,
+    bottomLeft
+  }
+}
+
+function getPointDistance(start: OcrPoint, end: OcrPoint): number {
+  const [startX, startY] = start
+  const [endX, endY] = end
+  return Math.hypot(endX - startX, endY - startY)
+}
+
+function getAngleDegrees(start: OcrPoint, end: OcrPoint): number {
+  const [startX, startY] = start
+  const [endX, endY] = end
+  return (Math.atan2(endY - startY, endX - startX) * 180) / Math.PI
+}
+
+function normalizeAngleDegrees(value: number): number {
+  let normalizedValue = value
+
+  while (normalizedValue <= -180) normalizedValue += 360
+  while (normalizedValue > 180) normalizedValue -= 360
+
+  return normalizedValue
+}
+
+function getAngleDeltaDegrees(left: number, right: number): number {
+  return Math.abs(normalizeAngleDegrees(left - right))
+}
+
+function averageAnglesDegrees(values: readonly number[]): number {
+  if (values.length === 0) return DEFAULT_TEXT_ROTATE
+
+  const { x, y } = values.reduce(
+    (accumulator, value) => ({
+      x: accumulator.x + Math.cos((value * Math.PI) / 180),
+      y: accumulator.y + Math.sin((value * Math.PI) / 180)
+    }),
+    { x: 0, y: 0 }
+  )
+
+  if (x === 0 && y === 0) return DEFAULT_TEXT_ROTATE
+  return (Math.atan2(y, x) * 180) / Math.PI
+}
+
+function getOrderedPolygonPoints(
+  polygon: OrderedOcrPolygon
+): readonly OcrPoint[] {
+  return [
+    polygon.topLeft,
+    polygon.topRight,
+    polygon.bottomRight,
+    polygon.bottomLeft
+  ]
+}
+
+function getPolygonSignedArea(points: readonly OcrPoint[]): number {
+  return points.reduce((area, point, index) => {
+    const nextPoint = points[(index + 1) % points.length]
+    if (!nextPoint) return area
+
+    return area + point[0] * nextPoint[1] - nextPoint[0] * point[1]
+  }, 0)
+}
+
+function getCrossProductZ(
+  start: OcrPoint,
+  middle: OcrPoint,
+  end: OcrPoint
+): number {
+  const abX = middle[0] - start[0]
+  const abY = middle[1] - start[1]
+  const bcX = end[0] - middle[0]
+  const bcY = end[1] - middle[1]
+  return abX * bcY - abY * bcX
+}
+
+function isConvexPolygon(points: readonly OcrPoint[]): boolean {
+  const crossProducts = points.map((point, index) => {
+    const middle = points[(index + 1) % points.length]
+    const end = points[(index + 2) % points.length]
+    if (!middle || !end) return 0
+    return getCrossProductZ(point, middle, end)
+  })
+
+  const nonZeroCrossProducts = crossProducts.filter(
+    (value) => Math.abs(value) > Number.EPSILON
+  )
+
+  if (nonZeroCrossProducts.length !== points.length) return false
+
+  const firstSign = Math.sign(nonZeroCrossProducts[0] ?? 0)
+  return nonZeroCrossProducts.every((value) => Math.sign(value) === firstSign)
+}
+
+function hasStablePolygonGeometry(polygon: OrderedOcrPolygon): boolean {
+  const edges = [
+    getPointDistance(polygon.topLeft, polygon.topRight),
+    getPointDistance(polygon.topRight, polygon.bottomRight),
+    getPointDistance(polygon.bottomRight, polygon.bottomLeft),
+    getPointDistance(polygon.bottomLeft, polygon.topLeft)
+  ]
+
+  return edges.every((edge) => edge >= MIN_GEOMETRY_EDGE_LENGTH)
+}
+
+function createBoundingBoxGeometry(box: BoundingBox): OcrTextGeometry {
+  return {
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    rotate: DEFAULT_TEXT_ROTATE,
+    sampleBox: box
+  }
+}
+
+function toRotatedTextGeometry(
+  polygon: OrderedOcrPolygon,
+  image: Pick<DecodedImage, 'width' | 'height'>,
+  sampleBox: BoundingBox
+): OcrTextGeometry | undefined {
+  if (!hasStablePolygonGeometry(polygon)) return undefined
+
+  const topAngle = getAngleDegrees(polygon.topLeft, polygon.topRight)
+  const bottomAngle = getAngleDegrees(polygon.bottomLeft, polygon.bottomRight)
+  const leftAngle = getAngleDegrees(polygon.topLeft, polygon.bottomLeft)
+  const rightAngle = getAngleDegrees(polygon.topRight, polygon.bottomRight)
+
+  if (
+    getAngleDeltaDegrees(topAngle, bottomAngle) > MAX_PARALLEL_ANGLE_DELTA ||
+    getAngleDeltaDegrees(leftAngle, rightAngle) > MAX_SIDE_ANGLE_DELTA
+  ) {
+    return undefined
+  }
+
+  const rotate = roundToSingleDecimal(
+    normalizeAngleDegrees(averageAnglesDegrees([topAngle, bottomAngle]))
+  )
+  const width = roundToSingleDecimal(
+    (getPointDistance(polygon.topLeft, polygon.topRight) +
+      getPointDistance(polygon.bottomLeft, polygon.bottomRight)) /
+      2
+  )
+  const height = roundToSingleDecimal(
+    (getPointDistance(polygon.topLeft, polygon.bottomLeft) +
+      getPointDistance(polygon.topRight, polygon.bottomRight)) /
+      2
+  )
+
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width < MIN_GEOMETRY_EDGE_LENGTH ||
+    height < MIN_GEOMETRY_EDGE_LENGTH
+  ) {
+    return undefined
+  }
+
+  const maxLeft = Math.max(0, image.width - 1)
+  const maxTop = Math.max(0, image.height - 1)
+
+  return {
+    x: clampNumber(polygon.topLeft[0], 0, maxLeft),
+    y: clampNumber(polygon.topLeft[1], 0, maxTop),
+    width,
+    height,
+    rotate: Math.abs(rotate) <= MAX_TEXT_ROTATE ? rotate : DEFAULT_TEXT_ROTATE,
+    sampleBox
+  }
+}
+
+function inferGeometryStyleHints(
+  polygon: OrderedOcrPolygon | undefined,
+  rotate: number
+): OcrStyleHints {
+  if (!polygon || !hasStablePolygonGeometry(polygon)) {
+    return getDefaultOcrStyleHints()
+  }
+
+  const leftAngle = getAngleDegrees(polygon.topLeft, polygon.bottomLeft)
+  const rightAngle = getAngleDegrees(polygon.topRight, polygon.bottomRight)
+  const leftSkew = normalizeAngleDegrees(leftAngle - (rotate + 90))
+  const rightSkew = normalizeAngleDegrees(rightAngle - (rotate + 90))
+
+  if (getAngleDeltaDegrees(leftSkew, rightSkew) > MAX_SKEW_SIDE_DELTA) {
+    return getDefaultOcrStyleHints()
+  }
+
+  const skew = roundToSingleDecimal(
+    clampNumber((leftSkew + rightSkew) / 2, -MAX_TEXT_SKEW, MAX_TEXT_SKEW)
+  )
+  const italic =
+    Math.abs(skew) >= ITALIC_SKEW_THRESHOLD && Math.abs(skew) <= MAX_ITALIC_SKEW
+
+  return {
+    italic,
+    skew: Number.isFinite(skew) ? skew : DEFAULT_TEXT_SKEW
+  }
+}
+
+function getOcrTextGeometry(
+  value: unknown,
+  image: Pick<DecodedImage, 'width' | 'height'>
+):
+  | {
+      geometry: OcrTextGeometry
+      polygon: OrderedOcrPolygon | undefined
+    }
+  | undefined {
+  const points = toPointList(value)
+  const sampleBox = toBoundingBoxFromPoints(points, image)
+  if (!sampleBox) return undefined
+
+  const rawPolygon = toRawOrderedPolygon(points)
+  if (
+    !rawPolygon ||
+    !isConvexPolygon(getOrderedPolygonPoints(rawPolygon)) ||
+    getPolygonSignedArea(getOrderedPolygonPoints(rawPolygon)) <= Number.EPSILON
+  ) {
+    return {
+      geometry: createBoundingBoxGeometry(sampleBox),
+      polygon: undefined
+    }
+  }
+
+  const geometry = toRotatedTextGeometry(rawPolygon, image, sampleBox)
+
+  return geometry
+    ? { geometry, polygon: rawPolygon }
+    : {
+        geometry: createBoundingBoxGeometry(sampleBox),
+        polygon: undefined
+      }
+}
+
+function createAnalysisCanvas(
+  width: number,
+  height: number
+): RenderCanvas | undefined {
+  if (
+    typeof document === 'undefined' ||
+    typeof document.createElement !== 'function'
+  ) {
+    return undefined
+  }
+
+  const canvas = document.createElement('canvas') as unknown as RenderCanvas
+  if (!canvas || typeof canvas.getContext !== 'function') return undefined
+
+  canvas.width = width
+  canvas.height = height
+  return canvas
+}
+
+function getPixelSampleStats(
+  image: HTMLImageElement,
+  box: BoundingBox
+): PixelSampleStats | undefined {
+  const sampleWidth = clampNumber(
+    normalizeDimension(box.width, 1),
+    1,
+    MAX_PIXEL_SAMPLE_SIZE
+  )
+  const sampleHeight = clampNumber(
+    normalizeDimension(box.height, 1),
+    1,
+    MAX_PIXEL_SAMPLE_SIZE
+  )
+  const canvas = createAnalysisCanvas(sampleWidth, sampleHeight)
+  const context = canvas?.getContext('2d')
+
+  if (!context || typeof context.drawImage !== 'function') return undefined
+
+  const imageDataGetter = (
+    context as CanvasRenderingContext2D & {
+      getImageData?: (
+        sx: number,
+        sy: number,
+        sw: number,
+        sh: number
+      ) => ImageData
+    }
+  ).getImageData
+
+  if (typeof imageDataGetter !== 'function') return undefined
+
+  try {
+    context.drawImage(
+      image,
+      box.x,
+      box.y,
+      box.width,
+      box.height,
+      0,
+      0,
+      sampleWidth,
+      sampleHeight
+    )
+
+    const { data } = imageDataGetter.call(
+      context,
+      0,
+      0,
+      sampleWidth,
+      sampleHeight
+    )
+    let minLuminance = 255
+    let maxLuminance = 0
+    let opaquePixelCount = 0
+
+    for (let index = 0; index < data.length; index += 4) {
+      const alpha = data[index + 3]
+      if (alpha < 16) continue
+
+      const red = data[index] ?? 0
+      const green = data[index + 1] ?? 0
+      const blue = data[index + 2] ?? 0
+      const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+
+      minLuminance = Math.min(minLuminance, luminance)
+      maxLuminance = Math.max(maxLuminance, luminance)
+      opaquePixelCount += 1
+    }
+
+    if (opaquePixelCount < MIN_PIXEL_SAMPLE_SIZE) return undefined
+
+    const contrast = maxLuminance - minLuminance
+    if (contrast < MIN_PIXEL_SAMPLE_CONTRAST) return undefined
+
+    const darknessThreshold = maxLuminance - contrast * 0.35
+    let darkPixelCount = 0
+
+    for (let index = 0; index < data.length; index += 4) {
+      const alpha = data[index + 3]
+      if (alpha < 16) continue
+
+      const red = data[index] ?? 0
+      const green = data[index + 1] ?? 0
+      const blue = data[index + 2] ?? 0
+      const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+      if (luminance <= darknessThreshold) darkPixelCount += 1
+    }
+
+    return {
+      contrast,
+      darkPixelRatio: darkPixelCount / opaquePixelCount,
+      opaquePixelCount
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function estimateFontWeight(image: HTMLImageElement, box: BoundingBox): number {
+  const pixelStats = getPixelSampleStats(image, box)
+  if (!pixelStats) return DEFAULT_TEXT_FONT_WEIGHT
+
+  const densityScore =
+    pixelStats.darkPixelRatio *
+    clampNumber(box.height / 24, 0.85, 1.2) *
+    clampNumber(pixelStats.contrast / 96, 0.8, 1.15)
+
+  if (densityScore >= 0.28) return FONT_WEIGHT_BUCKETS[3]
+  if (densityScore >= 0.2) return FONT_WEIGHT_BUCKETS[2]
+  if (densityScore >= 0.13) return FONT_WEIGHT_BUCKETS[1]
+  return FONT_WEIGHT_BUCKETS[0]
+}
+
 function normalizeOcrResult(
   result: readonly OcrResultItem[] | undefined,
-  image: Pick<DecodedImage, 'width' | 'height'>
+  decodedImage: Pick<DecodedImage, 'height' | 'image' | 'width'>
 ): NormalizedOcrTextBlock[] {
   const rawItems = Array.isArray(result) ? result : []
 
@@ -469,12 +928,24 @@ function normalizeOcrResult(
     const content = item.text.trim()
     if (!content) return blocks
 
-    const box = toBoundingBox(item.poly, image)
-    if (!box) return blocks
+    const geometryResult = getOcrTextGeometry(item.poly, decodedImage)
+    if (!geometryResult) return blocks
+
+    const geometryStyleHints = inferGeometryStyleHints(
+      geometryResult.polygon,
+      geometryResult.geometry.rotate
+    )
+    const fontWeight = estimateFontWeight(
+      decodedImage.image,
+      geometryResult.geometry.sampleBox
+    )
 
     blocks.push({
-      box,
-      content
+      content,
+      fontWeight,
+      geometry: geometryResult.geometry,
+      italic: geometryStyleHints.italic,
+      skew: geometryStyleHints.skew
     })
 
     return blocks
@@ -499,8 +970,8 @@ function createOcrText(
   block: NormalizedOcrTextBlock,
   index: number
 ): IntermediateText {
-  const fontSize = Math.max(1, Math.round(Math.min(24, block.box.height)))
-  const lineHeight = Math.max(fontSize, Math.round(block.box.height))
+  const fontSize = Math.max(1, Math.round(block.geometry.height))
+  const lineHeight = Math.max(fontSize, Math.round(block.geometry.height))
   const ascent = Math.round(lineHeight * 0.75)
 
   return new IntermediateText({
@@ -508,19 +979,19 @@ function createOcrText(
     content: block.content,
     fontSize,
     fontFamily: DEFAULT_FONT_FAMILY,
-    fontWeight: 400,
-    italic: false,
-    color: '#0f172a',
-    width: block.box.width,
-    height: block.box.height,
+    fontWeight: block.fontWeight,
+    italic: block.italic,
+    color: '#000000',
+    width: block.geometry.width,
+    height: block.geometry.height,
     lineHeight,
-    x: block.box.x,
-    y: block.box.y,
+    x: block.geometry.x,
+    y: block.geometry.y,
     ascent,
     descent: Math.max(0, lineHeight - ascent),
     dir: TextDir.LTR,
-    rotate: 0,
-    skew: 0,
+    rotate: block.geometry.rotate,
+    skew: block.skew,
     isEOL: true
   })
 }
@@ -570,11 +1041,26 @@ function createRenderCanvas(
   return canvas
 }
 
+function getSafeAngle(value: number, maxAbs: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (Math.abs(value) > maxAbs) return 0
+  return value
+}
+
+function getSafeFontWeight(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_TEXT_FONT_WEIGHT
+
+  const roundedValue = Math.round(value)
+  if (roundedValue < 100 || roundedValue > 900) {
+    return DEFAULT_TEXT_FONT_WEIGHT
+  }
+
+  return roundedValue
+}
+
 function getCanvasTextFont(text: IntermediateText): string {
-  const style = text.italic ? 'italic ' : ''
-  const weight = Number.isFinite(text.fontWeight)
-    ? `${Math.max(1, Math.round(text.fontWeight))} `
-    : ''
+  const style = text.italic === true ? 'italic ' : ''
+  const weight = `${getSafeFontWeight(text.fontWeight)} `
   const size = normalizeDimension(
     text.fontSize,
     Math.max(1, Math.round(text.height))
@@ -603,14 +1089,14 @@ function getCanvasTextDirection(text: IntermediateText): CanvasDirection {
 }
 
 function getCanvasTextRotation(text: IntermediateText): number {
-  const baseRotate = Number.isFinite(text.rotate) ? text.rotate : 0
+  const baseRotate = getSafeAngle(text.rotate, MAX_TEXT_ROTATE)
   return text.vertical || text.dir === TextDir.TTB
     ? baseRotate + 90
     : baseRotate
 }
 
 function getCanvasTextSkew(text: IntermediateText): number {
-  return Number.isFinite(text.skew) ? text.skew : 0
+  return getSafeAngle(text.skew, MAX_TEXT_SKEW)
 }
 
 function drawDecodedPage(

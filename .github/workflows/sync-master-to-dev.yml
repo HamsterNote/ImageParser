@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: sync-master-to-dev
@@ -39,22 +38,28 @@ jobs:
         run: |
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}.git"
           git fetch origin --prune
-          git fetch origin master || true
-          git fetch origin main || true
           git fetch origin dev || true
 
-      - name: Detect default branch (master/main)
+      - name: Detect default branch
         id: detect
         shell: bash
         run: |
-          if git ls-remote --exit-code --heads origin master >/dev/null 2>&1; then
-            echo "name=master" >> "$GITHUB_OUTPUT"
-          elif git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
-            echo "name=main" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Neither master nor main branch exists on origin."
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              DEFAULT_BRANCH="${{ github.base_ref }}"
+            else
+              DEFAULT_BRANCH="${GITHUB_REF#refs/heads/}"
+            fi
+          fi
+
+          if ! git ls-remote --exit-code --heads origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Default branch '$DEFAULT_BRANCH' does not exist on origin."
             exit 1
           fi
+
+          echo "name=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Checkout dev branch (create if missing)
         shell: bash

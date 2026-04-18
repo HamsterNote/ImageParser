@@ -568,81 +568,6 @@ function getPolygonCenter(points: readonly OcrPoint[]): OcrPoint {
   return [x / points.length, y / points.length]
 }
 
-function normalizeTextAxisAngle(value: number): number {
-  let normalizedValue = normalizeAngleDegrees(value)
-
-  while (normalizedValue <= -90) normalizedValue += 180
-  while (normalizedValue > 90) normalizedValue -= 180
-
-  return normalizedValue
-}
-
-function getPointSequenceCovariance(
-  points: readonly OcrPoint[],
-  center: OcrPoint
-): number {
-  return points.reduce((sum, [x, y]) => {
-    return sum + (x - center[0]) * (y - center[1])
-  }, 0)
-}
-
-function getNormalizedPolygonStartIndex(
-  clockwisePoints: readonly OcrPoint[],
-  center: OcrPoint
-): number {
-  const covariance = getPointSequenceCovariance(clockwisePoints, center)
-  const expectedSign = -Math.sign(covariance)
-
-  if (expectedSign !== 0) {
-    const directionalIndex = clockwisePoints.findIndex((point, index) => {
-      const previousPoint =
-        clockwisePoints[
-          (index + clockwisePoints.length - 1) % clockwisePoints.length
-        ]
-      const nextPoint = clockwisePoints[(index + 1) % clockwisePoints.length]
-
-      if (!previousPoint || !nextPoint) return false
-
-      const candidateVectors: readonly [OcrPoint, OcrPoint][] = [
-        [
-          [nextPoint[0] - point[0], nextPoint[1] - point[1]],
-          [previousPoint[0] - point[0], previousPoint[1] - point[1]]
-        ],
-        [
-          [previousPoint[0] - point[0], previousPoint[1] - point[1]],
-          [nextPoint[0] - point[0], nextPoint[1] - point[1]]
-        ]
-      ]
-
-      return candidateVectors.some(([horizontalVector, verticalVector]) => {
-        return (
-          horizontalVector[0] > 0 &&
-          verticalVector[1] > 0 &&
-          Math.sign(
-            normalizeTextAxisAngle(getAngleDegrees([0, 0], horizontalVector))
-          ) === expectedSign
-        )
-      })
-    })
-
-    if (directionalIndex !== -1) {
-      return directionalIndex
-    }
-  }
-
-  return clockwisePoints.reduce((bestIndex, point, index) => {
-    const bestPoint = clockwisePoints[bestIndex]
-
-    if (!bestPoint) return index
-
-    if (point[1] !== bestPoint[1]) {
-      return point[1] < bestPoint[1] ? index : bestIndex
-    }
-
-    return point[0] < bestPoint[0] ? index : bestIndex
-  }, 0)
-}
-
 function normalizeQuadrilateralPoints(
   points: readonly OcrPoint[]
 ): readonly [OcrPoint, OcrPoint, OcrPoint, OcrPoint] | undefined {
@@ -663,7 +588,17 @@ function normalizeQuadrilateralPoints(
       ? angleSortedPoints
       : [...angleSortedPoints].reverse()
 
-  const startIndex = getNormalizedPolygonStartIndex(clockwisePoints, center)
+  const startIndex = clockwisePoints.reduce((bestIndex, point, index) => {
+    const bestPoint = clockwisePoints[bestIndex]
+
+    if (!bestPoint) return index
+
+    if (point[1] !== bestPoint[1]) {
+      return point[1] < bestPoint[1] ? index : bestIndex
+    }
+
+    return point[0] < bestPoint[0] ? index : bestIndex
+  }, 0)
 
   const [topLeft, topRight, bottomRight, bottomLeft] = clockwisePoints.map(
     (_point, index) =>

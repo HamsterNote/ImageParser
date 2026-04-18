@@ -1,7 +1,12 @@
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { dts } from 'rolldown-plugin-dts'
 
-const opencvBrowserShimPath =
-  '/Users/zhangxiao/frontend/HamsterNote/ImageParser/demo/opencv-browser-shim.js'
+const configFilePath = fileURLToPath(import.meta.url)
+const opencvBrowserShimPath = resolve(
+  configFilePath,
+  '../demo/opencv-browser-shim.js'
+)
 
 export default [
   {

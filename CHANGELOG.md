@@ -20,3 +20,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复复杂文本 polygon 的点序归一化、baseline 定位和平均宽度回放，降低大角度、近竖排和梯形文本在 decode 阶段的几何偏差
 - 补充 OpenSpec 发布自动化规范，约束 `ImageParser` 的 CI、npm 发布与分支同步行为
 - 修复近竖直文本 polygon 的归一化起点选择，并移除 decode 基线坐标的一位小数截断，避免几何回放测试出现偏差
+- 修复 demo 构建中 OpenCV shim 的本机绝对路径配置，避免 GitHub Actions 无法解析浏览器入口依赖

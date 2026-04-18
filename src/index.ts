@@ -556,10 +556,6 @@ function getPointKey([x, y]: OcrPoint): string {
   return `${x}:${y}`
 }
 
-function getPointCoordinateSum([x, y]: OcrPoint): number {
-  return x + y
-}
-
 function getPolygonCenter(points: readonly OcrPoint[]): OcrPoint {
   const { x, y } = points.reduce(
     (accumulator, [pointX, pointY]) => ({

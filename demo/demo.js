@@ -174,6 +174,79 @@ const getSafeAngle = (value, maxAbs = 180) => {
   return value
 }
 
+const normalizeAngle = (value) => {
+  let normalized = value
+
+  while (normalized <= -180) normalized += 360
+  while (normalized > 180) normalized -= 360
+
+  return normalized
+}
+
+const getPolygonPoint = (value) => {
+  if (!Array.isArray(value) || value.length < 2) return undefined
+
+  const [x, y] = value
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined
+
+  return { x, y }
+}
+
+const getTextPolygon = (text) => {
+  if (!Array.isArray(text.polygon) || text.polygon.length !== 4) return undefined
+
+  const points = text.polygon.map(getPolygonPoint)
+  if (points.some((point) => point === undefined)) return undefined
+
+  return points
+}
+
+const getPolygonDistance = (start, end) => {
+  return Math.hypot(end.x - start.x, end.y - start.y)
+}
+
+const getPolygonAngle = (start, end) => {
+  return normalizeAngle(
+    (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI
+  )
+}
+
+const getTextDerivedRotate = (text) => {
+  const polygon = getTextPolygon(text)
+  if (!polygon) return 0
+
+  const [topLeft, topRight] = polygon
+  const baseRotate = getSafeAngle(getPolygonAngle(topLeft, topRight), 180)
+  return text.vertical === true || text.dir === 'ttb'
+    ? getSafeAngle(normalizeAngle(baseRotate + 90), 180)
+    : baseRotate
+}
+
+const getTextAdvanceLength = (text) => {
+  const polygon = getTextPolygon(text)
+  if (!polygon) return 1
+
+  const [topLeft, topRight, , bottomLeft] = polygon
+  const length =
+    text.vertical === true || text.dir === 'ttb'
+      ? getPolygonDistance(topLeft, bottomLeft)
+      : getPolygonDistance(topLeft, topRight)
+
+  return Number.isFinite(length) && length > 0 ? length : 1
+}
+
+const getPolygonBoundingBox = (polygon) => {
+  const xs = polygon.map((point) => point.x)
+  const ys = polygon.map((point) => point.y)
+
+  return {
+    height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+    width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+    x: Math.min(...xs),
+    y: Math.min(...ys)
+  }
+}
+
 const formatOverlayStyleLabel = (text) => {
   const labels = []
 
@@ -185,8 +258,9 @@ const formatOverlayStyleLabel = (text) => {
     labels.push('italic')
   }
 
-  if (hasNonDefaultStyleValue(text.rotate, 0)) {
-    labels.push(`r${Math.round(text.rotate)}`)
+  const derivedRotate = getTextDerivedRotate(text)
+  if (hasNonDefaultStyleValue(derivedRotate, 0)) {
+    labels.push(`r${Math.round(derivedRotate)}`)
   }
 
   if (hasNonDefaultStyleValue(text.skew, 0)) {
@@ -206,15 +280,19 @@ const extractRecognizedTexts = (snapshot) => {
       content: text.content,
       fontSize: text.fontSize,
       fontWeight: text.fontWeight,
-      height: text.height,
       italic: text.italic,
       order: textIndex + 1,
       page: pageIndex + 1,
-      rotate: text.rotate,
+      polygon: text.polygon,
+      rotate: getTextDerivedRotate(text),
       skew: text.skew,
-      width: text.width,
-      x: text.x,
-      y: text.y
+      ...getPolygonBoundingBox(getTextPolygon(text) ?? [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 }
+      ]),
+      width: getTextAdvanceLength(text)
     }))
   })
 }
@@ -289,32 +367,24 @@ const normalizePositiveSize = (value, fallback = 1) => {
 }
 
 const getOverlayPolygon = (text, pageWidth, pageHeight) => {
-  const x = Number.isFinite(text.x) ? text.x : 0
-  const y = Number.isFinite(text.y) ? text.y : 0
-  const left = clamp(x, 0, Math.max(0, pageWidth - 1))
-  const top = clamp(y, 0, Math.max(0, pageHeight - 1))
-  const width = normalizePositiveSize(text.width)
-  const height = normalizePositiveSize(text.height)
-  const radians = (getSafeAngle(text.rotate, 180) * Math.PI) / 180
-  const cosine = Math.cos(radians)
-  const sine = Math.sin(radians)
+  const polygon = getTextPolygon(text)
   const clampPoint = ({ x: pointX, y: pointY }) => ({
     x: clamp(pointX, 0, pageWidth),
     y: clamp(pointY, 0, pageHeight)
   })
-  const topLeft = { x: left, y: top }
-  const topRight = {
-    x: left + width * cosine,
-    y: top + width * sine
+
+  if (!polygon) {
+    const fallbackWidth = normalizePositiveSize(getTextAdvanceLength(text))
+
+    return {
+      topLeft: clampPoint({ x: 0, y: 0 }),
+      topRight: clampPoint({ x: fallbackWidth, y: 0 }),
+      bottomRight: clampPoint({ x: fallbackWidth, y: 1 }),
+      bottomLeft: clampPoint({ x: 0, y: 1 })
+    }
   }
-  const bottomLeft = {
-    x: left - height * sine,
-    y: top + height * cosine
-  }
-  const bottomRight = {
-    x: topRight.x - height * sine,
-    y: topRight.y + height * cosine
-  }
+
+  const [topLeft, topRight, bottomRight, bottomLeft] = polygon
 
   return {
     topLeft: clampPoint(topLeft),

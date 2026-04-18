@@ -15,3 +15,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - 更新 ImageParser demo 与测试，覆盖真实 OCR 输出、空识别结果、错误反馈和多输入载体一致性
 - 将图片 OCR 运行时从 `@paddlejs-models/ocr` 迁移到 `@paddleocr/paddleocr-js`，改用 `PaddleOCR.create()` / `predict()` / `dispose()` 生命周期并保持 `IntermediateDocument`、`decode()` 与 Demo 预览兼容
+- 修复复杂文本 polygon 的点序归一化、baseline 定位和平均宽度回放，降低大角度、近竖排和梯形文本在 decode 阶段的几何偏差

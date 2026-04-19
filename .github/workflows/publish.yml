@@ -113,5 +113,11 @@ jobs:
           PKG_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).name)")
           PKG_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
           echo "Ensure dist-tag: ${PUBLISH_TAG} -> $PKG_VERSION"
-          npm dist-tag add "$PKG_NAME@$PKG_VERSION" "$PUBLISH_TAG" || true
+          npm dist-tag add "$PKG_NAME@$PKG_VERSION" "$PUBLISH_TAG"
+          ACTUAL_TAG_VERSION=$(npm view "$PKG_NAME@$PUBLISH_TAG" version 2>/dev/null || echo "")
+          if [[ "$ACTUAL_TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::dist-tag ${PUBLISH_TAG} did not resolve to ${PKG_VERSION}, got: ${ACTUAL_TAG_VERSION}"
+            exit 1
+          fi
+          echo "dist-tag ${PUBLISH_TAG} -> ${PKG_VERSION} verified."
           npm dist-tag ls "$PKG_NAME"

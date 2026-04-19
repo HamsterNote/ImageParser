@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 初始化 `@hamster-note/image-parser` 工程骨架，补齐 TypeScript、Jest、Rolldown、ESLint、Prettier、demo 与测试入口
 - 新增类型安全的 `ImageParser` 占位 API、受控占位文档输出与基础示例页面
 - 新增 GitHub Actions 自动化：PR 校验、`version/*` 分支 npm 发布、`main/master` 到 `dev` 的自动同步
+- 新增推送 `version/*` 分支自动构建并发布 `@hamster-note/image-parser` 到 npm 的 GitHub Actions 工作流
 
 ### Changed
 - 归档 `adapt-types-0-7-0-text-definition`、`add-paddlejs-ocr-encode`、`apply-image-text-style-to-intermediate-document`、`fix-decode-text-fit-width`、`fix-ocr-poly-geometry`、`replace-paddle-js-models-ocr-with-paddleocr-js` 变更目录，并将相关 capability 同步到主 `openspec/specs` 目录
@@ -19,3 +20,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 将图片 OCR 运行时从 `@paddlejs-models/ocr` 迁移到 `@paddleocr/paddleocr-js`，改用 `PaddleOCR.create()` / `predict()` / `dispose()` 生命周期并保持 `IntermediateDocument`、`decode()` 与 Demo 预览兼容
 - 补充 OpenSpec 发布自动化规范，约束 `ImageParser` 的 CI、npm 发布与分支同步行为
 - 修复 demo 构建中 OpenCV shim 的本机绝对路径配置，避免 GitHub Actions 无法解析浏览器入口依赖
+- 修复复杂文本 polygon 的点序归一化、baseline 定位和平均宽度回放，降低大角度、近竖排和梯形文本在 decode 阶段的几何偏差
+- 为 npm 公开发布补充 `publishConfig.access` 与 `publishConfig.registry`，对齐 version 分支自动发布链路

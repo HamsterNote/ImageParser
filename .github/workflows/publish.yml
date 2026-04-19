@@ -25,18 +25,21 @@ jobs:
           VERSION="${BRANCH#version/}"
           PKG_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
 
-          echo "Detected branch: $BRANCH"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
           if [[ "$PKG_VERSION" =~ -dev ]]; then
-            PUBLISH_TAG="dev"
+            PUBLISH_TAG=dev
+            echo "Version type: Dev Pre-release"
           elif [[ "$PKG_VERSION" =~ -beta ]]; then
-            PUBLISH_TAG="beta"
+            PUBLISH_TAG=beta
+            echo "Version type: Beta Pre-release"
           else
-            PUBLISH_TAG="latest"
+            PUBLISH_TAG=latest
+            echo "Version type: Release"
           fi
 
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "PUBLISH_TAG=$PUBLISH_TAG" >> "$GITHUB_ENV"
+
+          echo "Detected branch: $BRANCH"
           echo "Branch version: $VERSION"
           echo "Package version: $PKG_VERSION"
           echo "Publish tag: $PUBLISH_TAG"

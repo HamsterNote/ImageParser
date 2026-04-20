@@ -2029,7 +2029,7 @@ var jsYaml = {
 	safeDump: renamed("safeDump", "dump")
 };
 //#endregion
-//#region ../../ImageParser/demo/opencv-browser-shim.js
+//#region demo/opencv-browser-shim.js
 var import_clipper = /* @__PURE__ */ __toESM((/* @__PURE__ */ __commonJSMin(((exports, module) => {
 	/*******************************************************************************
 	*                                                                              *

@@ -47,7 +47,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           registry-url: https://registry.npmjs.org
           cache: yarn
 
@@ -57,20 +57,29 @@ jobs:
           yarn --version
           yarn install --frozen-lockfile
 
+      - name: Ensure branch version matches package version
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
+          if [[ "$VERSION" != "$PKG_VERSION" ]]; then
+            echo "Branch version $VERSION does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
       - name: Check if version already published
         id: version
         shell: bash
         run: |
           PKG_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).name)")
-          VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
+          PKG_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
           echo "Package: $PKG_NAME"
-          echo "Version: $VERSION"
-          if npm view "$PKG_NAME@$VERSION" version > /dev/null 2>&1; then
+          echo "Version: $PKG_VERSION"
+          if npm view "$PKG_NAME@$PKG_VERSION" version > /dev/null 2>&1; then
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "Version $VERSION already exists on npm, skip publishing."
+            echo "Version $PKG_VERSION already exists on npm, skip publishing."
           else
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "Version $VERSION not found on npm, will publish."
+            echo "Version $PKG_VERSION not found on npm, will publish."
           fi
 
       - name: Verify npm authentication
@@ -87,7 +96,7 @@ jobs:
           echo "Registry: $(npm config get registry)"
           npm whoami
 
-      - name: Build project
+      - name: Build package
         if: steps.version.outputs.should_publish == 'true'
         run: |
           yarn build:all
@@ -105,7 +114,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           PKG_NAME=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).name)")
-          VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
-          echo "Ensure dist-tag: ${PUBLISH_TAG} -> $VERSION"
-          npm dist-tag add "$PKG_NAME@$VERSION" "$PUBLISH_TAG" || true
+          PKG_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
+          echo "Ensure dist-tag: ${PUBLISH_TAG} -> $PKG_VERSION"
+          npm dist-tag add "$PKG_NAME@$PKG_VERSION" "$PUBLISH_TAG"
+          ACTUAL_TAG_VERSION=$(npm view "$PKG_NAME@$PUBLISH_TAG" version 2>/dev/null || echo "")
+          if [[ "$ACTUAL_TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::dist-tag ${PUBLISH_TAG} did not resolve to ${PKG_VERSION}, got: ${ACTUAL_TAG_VERSION}"
+            exit 1
+          fi
+          echo "dist-tag ${PUBLISH_TAG} -> ${PKG_VERSION} verified."
           npm dist-tag ls "$PKG_NAME"

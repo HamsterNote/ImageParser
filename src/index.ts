@@ -556,10 +556,6 @@ function getPointKey([x, y]: OcrPoint): string {
   return `${x}:${y}`
 }
 
-function getPointCoordinateSum([x, y]: OcrPoint): number {
-  return x + y
-}
-
 function getPolygonCenter(points: readonly OcrPoint[]): OcrPoint {
   const { x, y } = points.reduce(
     (accumulator, [pointX, pointY]) => ({
@@ -570,6 +566,29 @@ function getPolygonCenter(points: readonly OcrPoint[]): OcrPoint {
   )
 
   return [x / points.length, y / points.length]
+}
+
+function getNormalizedPolygonStartIndex(
+  clockwisePoints: readonly OcrPoint[],
+  _center: OcrPoint
+): number {
+  return clockwisePoints.reduce(
+    (bestCandidate, point, index) => {
+      if (point[1] !== bestCandidate.point[1]) {
+        return point[1] < bestCandidate.point[1]
+          ? { index, point }
+          : bestCandidate
+      }
+
+      return point[0] < bestCandidate.point[0]
+        ? { index, point }
+        : bestCandidate
+    },
+    {
+      index: 0,
+      point: clockwisePoints[0] as OcrPoint
+    }
+  ).index
 }
 
 function normalizeQuadrilateralPoints(
@@ -592,24 +611,7 @@ function normalizeQuadrilateralPoints(
       ? angleSortedPoints
       : [...angleSortedPoints].reverse()
 
-  const startIndex = clockwisePoints.reduce((bestIndex, point, index) => {
-    const bestPoint = clockwisePoints[bestIndex]
-
-    if (!bestPoint) return index
-
-    const pointSum = getPointCoordinateSum(point)
-    const bestPointSum = getPointCoordinateSum(bestPoint)
-
-    if (pointSum !== bestPointSum) {
-      return pointSum < bestPointSum ? index : bestIndex
-    }
-
-    if (point[1] !== bestPoint[1]) {
-      return point[1] < bestPoint[1] ? index : bestIndex
-    }
-
-    return point[0] < bestPoint[0] ? index : bestIndex
-  }, 0)
+  const startIndex = getNormalizedPolygonStartIndex(clockwisePoints, center)
 
   const [topLeft, topRight, bottomRight, bottomLeft] = clockwisePoints.map(
     (_point, index) =>
@@ -859,8 +861,8 @@ function resolveTextBaselineOrigin(
     : verticalAxis
 
   return [
-    roundToSingleDecimal(topLeft[0] + baselineOffset[0] * ascent),
-    roundToSingleDecimal(topLeft[1] + baselineOffset[1] * ascent)
+    topLeft[0] + baselineOffset[0] * ascent,
+    topLeft[1] + baselineOffset[1] * ascent
   ]
 }
 

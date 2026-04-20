@@ -21,4 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 补充 OpenSpec 发布自动化规范，约束 `ImageParser` 的 CI、npm 发布与分支同步行为
 - 修复 demo 构建中 OpenCV shim 的本机绝对路径配置，避免 GitHub Actions 无法解析浏览器入口依赖
 - 修复复杂文本 polygon 的点序归一化、baseline 定位和平均宽度回放，降低大角度、近竖排和梯形文本在 decode 阶段的几何偏差
+- 调整四边形 polygon 起点归一化规则为按左上点稳定选序，并移除 baseline 原点的单小数舍入，修复 PR #4 在近竖排与裁剪文本场景下的 CI 测试失败
 - 为 npm 公开发布补充 `publishConfig.access` 与 `publishConfig.registry`，对齐 version 分支自动发布链路

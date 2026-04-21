@@ -605,6 +605,48 @@ describe('ImageParser', () => {
     ])
   })
 
+  it('encode 会把右上倾斜的横排文本 polygon 归一化为左上右上右下左下', async () => {
+    const slantedPolygon = createTextPolygon({
+      x: 40,
+      y: 60,
+      width: 120,
+      height: 28,
+      rotate: -8
+    })
+
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              slantedPolygon[1],
+              slantedPolygon[2],
+              slantedPolygon[3],
+              slantedPolygon[0]
+            ],
+            score: 0.98,
+            text: 'slanted horizontal'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await firstPage.getTexts()
+    const text = texts[0] as unknown as {
+      polygon: TestTextPolygon
+    }
+
+    expect(text.polygon).toEqual(slantedPolygon)
+  })
+
   it('encode 在近竖直旋转文本上仍可归一化 polygon 点序', async () => {
     const rotatedPolygon = createTextPolygon({
       x: 120,

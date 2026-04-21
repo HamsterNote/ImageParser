@@ -572,12 +572,16 @@ function getNormalizedPolygonStartIndex(
   clockwisePoints: readonly OcrPoint[],
   _center: OcrPoint
 ): number {
+  const topPointXWeight = 0.15
+
   return clockwisePoints.reduce(
     (bestCandidate, point, index) => {
-      if (point[1] !== bestCandidate.point[1]) {
-        return point[1] < bestCandidate.point[1]
-          ? { index, point }
-          : bestCandidate
+      const pointScore = point[1] + point[0] * topPointXWeight
+      const bestScore =
+        bestCandidate.point[1] + bestCandidate.point[0] * topPointXWeight
+
+      if (pointScore !== bestScore) {
+        return pointScore < bestScore ? { index, point } : bestCandidate
       }
 
       return point[0] < bestCandidate.point[0]

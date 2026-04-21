@@ -1,6 +1,6 @@
 ## Purpose
 
-定义 `ImageParser` 的 GitHub Actions 自动化约束，确保拉取请求校验、`version/*` 分支发布 npm 包以及默认分支向 `dev` 的同步流程具备稳定且可重复的行为。
+定义 `ImageParser` 的 GitHub Actions 自动化约束，确保拉取请求校验、`version/*` 分支发布 npm 包以及 `main` / `master` 向 `dev` 的同步流程具备稳定且可重复的行为。
 
 ## Requirements
 
@@ -26,9 +26,9 @@
 - **WHEN** 发布工作流检测到 `package.json` 中的版本已存在于 npm registry
 - **THEN** 工作流 MUST 跳过构建与发布步骤，避免因重复发布导致失败
 
-### Requirement: 默认分支变更需要同步到 dev
-系统 SHALL 在 `main` 或 `master` 发生推送或相关 PR 更新时，自动将默认分支的最新提交同步到 `dev` 分支。
+### Requirement: main 或 master 变更需要同步到 dev
+系统 SHALL 在 `main` 或 `master` 发生推送或相关 PR 更新时，自动将触发事件的目标分支最新提交同步到 `dev` 分支。
 
-#### Scenario: 默认分支有新提交时同步到 dev
+#### Scenario: main 或 master 有新提交时同步到 dev
 - **WHEN** `main` 或 `master` 收到推送，或针对它们的拉取请求被创建、更新或重新打开
-- **THEN** 工作流 MUST 获取远端最新分支状态，并将默认分支无冲突地合并到 `dev`；若 `dev` 不存在则基于默认分支创建后再同步
+- **THEN** 工作流 MUST 获取远端最新分支状态，并将当前触发的目标分支无冲突地合并到 `dev`；若 `dev` 不存在则基于该目标分支创建后再同步

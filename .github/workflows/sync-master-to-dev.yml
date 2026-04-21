@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   sync:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Merge master/main into dev
     runs-on: ubuntu-latest
     steps:
@@ -40,26 +41,27 @@ jobs:
           git fetch origin --prune
           git fetch origin dev || true
 
-      - name: Detect default branch
+      - name: Detect source branch
         id: detect
         shell: bash
         run: |
-          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-
-          if [ -z "$DEFAULT_BRANCH" ]; then
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              DEFAULT_BRANCH="${{ github.base_ref }}"
-            else
-              DEFAULT_BRANCH="${GITHUB_REF#refs/heads/}"
-            fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            SOURCE_BRANCH="${{ github.base_ref }}"
+          else
+            SOURCE_BRANCH="${GITHUB_REF#refs/heads/}"
           fi
 
-          if ! git ls-remote --exit-code --heads origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
-            echo "::error::Default branch '$DEFAULT_BRANCH' does not exist on origin."
+          if [ -z "$SOURCE_BRANCH" ]; then
+            echo "::error::Unable to determine source branch."
             exit 1
           fi
 
-          echo "name=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+          if ! git ls-remote --exit-code --heads origin "$SOURCE_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Source branch '$SOURCE_BRANCH' does not exist on origin."
+            exit 1
+          fi
+
+          echo "name=$SOURCE_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Checkout dev branch (create if missing)
         shell: bash
@@ -72,7 +74,7 @@ jobs:
             git push -u origin dev
           fi
 
-      - name: Merge default branch into dev
+      - name: Merge source branch into dev
         shell: bash
         run: |
           set -e

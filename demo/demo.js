@@ -275,6 +275,7 @@ const countStyledTexts = (texts) => {
 }
 
 const extractRecognizedTexts = (snapshot) => {
+  console.log(snapshot);
   return snapshot.pages.flatMap((page, pageIndex) => {
     return page.texts.map((text, textIndex) => ({
       content: text.content,

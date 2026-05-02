@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Type-safe OCR image parser package for Hamster Note.",
   "scripts": {
-    "build:all": "rolldown --config rolldown.config.ts",
+    "build:all": "rolldown --config rolldown.config.ts && node scripts/copy-assets.js",
     "prepublishOnly": "yarn build:all",
     "dev": "http-server -p 8000",
     "lint": "echo 'no-lint'",

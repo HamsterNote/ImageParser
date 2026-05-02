@@ -120,7 +120,7 @@ const DEFAULT_TEXT_ITALIC = false
 const DEFAULT_TEXT_ROTATE = 0
 const DEFAULT_TEXT_SKEW = 0
 const DEFAULT_PADDLE_OCR_OPTIONS = {
-  worker: false,
+  worker: true,
   unsupportedBehavior: 'error',
   lang: 'ch',
   ocrVersion: 'PP-OCRv5',

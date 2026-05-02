@@ -1,11 +1,11 @@
 import { PaddleOCR } from './vendor/paddleocr-browser.js'
 
 const OCR_WORKER_ENTRY_PATH = new URL(
-  '../node_modules/@paddleocr/paddleocr-js/dist/assets/worker-entry-Dtffs1su.js',
+  '../dist/assets/worker-entry-Dtffs1su.js',
   import.meta.url
 )
 const ORT_WASM_PATH = new URL(
-  '../node_modules/onnxruntime-web/dist/',
+  '../dist/',
   import.meta.url
 ).href
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [UnReleased]
+## [0.2.0] - 2025-05-02
 
 ### Added
 - 新增基于 `@paddleocr/paddleocr-js` 的图片 OCR 编码能力，将识别文本映射为单页 `IntermediateDocument`
@@ -23,3 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复复杂文本 polygon 的点序归一化、baseline 定位和平均宽度回放，降低大角度、近竖排和梯形文本在 decode 阶段的几何偏差
 - 调整四边形 polygon 起点归一化规则为按左上点稳定选序，并移除 baseline 原点的单小数舍入，修复 PR #4 在近竖排与裁剪文本场景下的 CI 测试失败
 - 为 npm 公开发布补充 `publishConfig.access` 与 `publishConfig.registry`，对齐 version 分支自动发布链路
+
+## [UnReleased]
+
+### Added
+
+### Changed

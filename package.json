@@ -1,6 +1,6 @@
 {
   "name": "@hamster-note/image-parser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Type-safe OCR image parser package for Hamster Note.",
   "scripts": {
     "build:all": "rolldown --config rolldown.config.ts && node scripts/copy-assets.js",

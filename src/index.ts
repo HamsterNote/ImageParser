@@ -1577,7 +1577,7 @@ function createOcrDocument(
     ],
     opacity: 1
   })
-  const content = texts.map((text) => text)
+  const content = [...texts]
   const page = new IntermediatePage({
     id: 'image-parser-ocr-page-1',
     content,

@@ -1,3 +1,7 @@
+import type {
+  IntermediateText,
+  IntermediateTextSerialized
+} from '@hamster-note/types'
 import {
   afterEach,
   beforeAll,
@@ -86,6 +90,7 @@ let canvasContextMock: {
   translate: ReturnType<typeof jest.fn>
 }
 let createElementMock: ReturnType<typeof jest.fn>
+let lastCanvasBlobType: string | undefined
 let imageBehavior: ImageBehavior = 'load'
 let createObjectURLMock: ReturnType<typeof jest.fn>
 let revokeObjectURLMock: ReturnType<typeof jest.fn>
@@ -162,6 +167,23 @@ function createSampleImageData(
 
 function getMockMeasuredTextWidth(content: string): number {
   return Math.max(0, content.length * 10)
+}
+
+function isIntermediateText(item: unknown): item is IntermediateText {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    'content' in item &&
+    typeof (item as { content?: unknown }).content === 'string'
+  )
+}
+
+async function getTextContent(page: {
+  getContent: () => Promise<unknown[]>
+}): Promise<IntermediateText[]> {
+  const content = await page.getContent()
+
+  return content.filter(isIntermediateText)
 }
 
 function createTextPolygon({
@@ -334,6 +356,7 @@ beforeAll(async () => {
 beforeEach(() => {
   canvasBehavior = 'success'
   imageBehavior = 'load'
+  lastCanvasBlobType = undefined
   Reflect.deleteProperty(globalThis, '__IMAGE_PARSER_PADDLE_OCR__')
 
   mockCreate.mockReset()
@@ -420,6 +443,8 @@ beforeEach(() => {
     }),
     height: 0,
     toBlob: jest.fn((callback: BlobCallback, type?: string) => {
+      lastCanvasBlobType = type
+
       if (canvasBehavior === 'empty-blob') {
         callback(null)
         return
@@ -540,7 +565,7 @@ describe('ImageParser', () => {
     }
 
     const page = firstPage as unknown as { height: number; width: number }
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const text = texts[0] as unknown as {
       content: string
       fontWeight: number
@@ -592,7 +617,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const text = texts[0] as unknown as {
       polygon: TestTextPolygon
     }
@@ -639,7 +664,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const text = texts[0] as unknown as {
       polygon: TestTextPolygon
     }
@@ -681,7 +706,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const text = texts[0] as unknown as {
       polygon: TestTextPolygon
     }
@@ -700,7 +725,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
 
     expect(document.pageCount).toBe(1)
     expect(texts).toHaveLength(0)
@@ -747,7 +772,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const invalidPolyText = texts[0] as unknown as {
       content: string
       polygon: TestTextPolygon
@@ -818,7 +843,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = (await firstPage.getTexts()) as Array<{
+    const texts = (await getTextContent(firstPage)) as Array<{
       content: string
       fontWeight: number
       italic: boolean
@@ -913,7 +938,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = (await firstPage.getTexts()) as Array<{
+    const texts = (await getTextContent(firstPage)) as Array<{
       content: string
       polygon: TestTextPolygon
     }>
@@ -1110,7 +1135,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const text = texts[0] as unknown as { content: string }
 
     expect(document.pageCount).toBe(1)
@@ -1140,6 +1165,8 @@ describe('ImageParser', () => {
     const overrideDispose = jest.fn(async () => undefined)
 
     class OverridePaddleOCR {
+      readonly kind = 'override-paddle-ocr'
+
       static async create() {
         return {
           dispose: overrideDispose,
@@ -1160,7 +1187,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
     const text = texts[0] as unknown as { content: string }
 
     expect(document.pageCount).toBe(1)
@@ -1222,9 +1249,14 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    expect(await firstPage.getThumbnail()).toBe(
-      'data:image/png;base64,AQIDBA=='
-    )
+    const thumbnail = await firstPage.getThumbnail()
+
+    expect(thumbnail).toBeDefined()
+    if (!thumbnail) {
+      throw new Error('缺少页面缩略图')
+    }
+    expect(typeof thumbnail).toBe('object')
+    expect(thumbnail.src).toBe('data:image/png;base64,AQIDBA==')
 
     canvasContextMock.drawImage.mockClear()
     canvasContextMock.scale.mockClear()
@@ -1278,6 +1310,25 @@ describe('ImageParser', () => {
     expect(decodedBuffer.byteLength).toBeGreaterThan(0)
   })
 
+  it('decode 兼容遗留字符串 thumbnail 并正确解析 MIME', async () => {
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    // 模拟 @hamster-note/types 0.8.0 之前遗留的字符串缩略图。
+    firstPage.getThumbnail = (async () =>
+          'data:image/jpeg;base64,/9j/4AAQ') as unknown as typeof firstPage.getThumbnail
+
+    const decodedBuffer = await ImageParser.decode(document)
+
+    expect(decodedBuffer.byteLength).toBeGreaterThan(0)
+    expect(lastCanvasBlobType).toBe('image/jpeg')
+  })
+
   it('decode 无法获取二维画布上下文时提示明确错误', async () => {
     canvasBehavior = 'no-context'
 
@@ -1320,7 +1371,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalTexts = await firstPage.getTexts()
+    const originalTexts = await getTextContent(firstPage)
     const firstText = originalTexts[0]
 
     if (!firstText) {
@@ -1342,7 +1393,7 @@ describe('ImageParser', () => {
       skew: 10
     })
 
-    firstPage.getTexts = async () => [clippedText]
+    firstPage.getContent = async () => [clippedText]
     canvasContextMock.translate.mockClear()
     canvasContextMock.rotate.mockClear()
     canvasContextMock.scale.mockClear()
@@ -1415,7 +1466,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
@@ -1433,7 +1484,7 @@ describe('ImageParser', () => {
       polygon: createTextPolygon({ x: 8, y: 10, width: 100, height: 20 })
     }
 
-    firstPage.getTexts = async () => [fallbackText]
+    firstPage.getContent = async () => [fallbackText]
     canvasContextMock.scale.mockClear()
     canvasContextMock.rotate.mockClear()
     canvasContextMock.transform.mockClear()
@@ -1483,7 +1534,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
@@ -1500,7 +1551,7 @@ describe('ImageParser', () => {
       })
     }
 
-    firstPage.getTexts = async () => [updatedText]
+    firstPage.getContent = async () => [updatedText]
     canvasContextMock.scale.mockClear()
     canvasContextMock.fillText.mockClear()
 
@@ -1543,7 +1594,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
@@ -1556,7 +1607,7 @@ describe('ImageParser', () => {
       [0, 60]
     ]
 
-    firstPage.getTexts = async () => [
+    firstPage.getContent = async () => [
       {
         ...originalText,
         polygon: trapezoidPolygon
@@ -1604,13 +1655,13 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
     }
 
-    firstPage.getTexts = async () => [
+    firstPage.getContent = async () => [
       {
         ...originalText,
         polygon: [
@@ -1662,7 +1713,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
@@ -1676,7 +1727,7 @@ describe('ImageParser', () => {
       rotate: 80
     })
 
-    firstPage.getTexts = async () => [
+    firstPage.getContent = async () => [
       {
         ...originalText,
         polygon: [
@@ -1744,7 +1795,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
@@ -1757,7 +1808,7 @@ describe('ImageParser', () => {
       height: 120
     })
 
-    firstPage.getTexts = async () => [
+    firstPage.getContent = async () => [
       {
         ...originalText,
         dir: 'ttb' as (typeof originalText)['dir'],
@@ -1821,7 +1872,7 @@ describe('ImageParser', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const originalText = (await firstPage.getTexts())[0]
+    const originalText = (await getTextContent(firstPage))[0]
 
     if (!originalText) {
       throw new Error('缺少 OCR 文本块')
@@ -1835,7 +1886,7 @@ describe('ImageParser', () => {
       return getMockMeasuredTextWidth(content)
     }
 
-    firstPage.getTexts = async () => [
+    firstPage.getContent = async () => [
       {
         ...originalText,
         content: '',
@@ -1908,7 +1959,10 @@ describe('ImageParser', () => {
 
     const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     const serialized = await IntermediateDocumentApi.serialize(document)
-    const serializedText = serialized.pages[0]?.texts[0]
+    const serializedText = serialized.pages[0]?.content?.find(
+      (item): item is IntermediateTextSerialized =>
+        'content' in item && typeof item.content === 'string'
+    )
 
     expect(serializedText?.fontWeight).toBe(600)
     expect(serializedText?.italic).toBe(true)

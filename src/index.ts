@@ -1,12 +1,13 @@
 import { DocumentParser, type ParserInput } from '@hamster-note/document-parser'
 import {
   IntermediateDocument,
+  IntermediateImage,
   IntermediatePage,
   IntermediatePageMap,
   IntermediateText,
+  type IntermediateTextPolygon,
   TextDir
 } from '@hamster-note/types'
-import type { IntermediateTextPolygon } from '@hamster-note/types'
 import type {
   OcrResultItem,
   PaddleOCR,
@@ -245,7 +246,7 @@ function parseDataUrlMimeType(value: string): string | undefined {
 }
 
 function resolveImageMimeType(value: string | undefined): string {
-  if (!value || !value.startsWith('image/')) return DEFAULT_IMAGE_MIME_TYPE
+  if (!value?.startsWith('image/')) return DEFAULT_IMAGE_MIME_TYPE
   return value
 }
 
@@ -1308,13 +1309,23 @@ function getRenderPageSize(
 }
 
 function getDecodeMimeType(page: IntermediatePage): Promise<string> {
-  return page.getThumbnail().then((thumbnail) => {
-    const normalizedThumbnail = thumbnail?.trim()
+  return page.getThumbnail().then((rawThumbnail) => {
+    const thumbnail: unknown = rawThumbnail
+    let dataUrl: string | undefined
+
+    if (typeof thumbnail === 'string') {
+      dataUrl = thumbnail.trim()
+    } else if (
+      thumbnail &&
+      typeof thumbnail === 'object' &&
+      'src' in thumbnail
+    ) {
+      const { src } = thumbnail as Pick<IntermediateImage, 'src'>
+      dataUrl = src.trim()
+    }
 
     return resolveImageMimeType(
-      normalizedThumbnail
-        ? parseDataUrlMimeType(normalizedThumbnail)
-        : undefined
+      dataUrl ? parseDataUrlMimeType(dataUrl) : undefined
     )
   })
 }
@@ -1555,13 +1566,26 @@ function createOcrDocument(
   thumbnail: string
 ): IntermediateDocument {
   const texts = blocks.map((block, index) => createOcrText(block, index))
+  const thumbnailImage = new IntermediateImage({
+    id: 'image-parser-thumbnail-1',
+    src: thumbnail,
+    polygon: [
+      [0, 0],
+      [decodedImage.width, 0],
+      [decodedImage.width, decodedImage.height],
+      [0, decodedImage.height]
+    ],
+    opacity: 1
+  })
+  const content = [...texts]
   const page = new IntermediatePage({
     id: 'image-parser-ocr-page-1',
+    content,
     texts,
     width: decodedImage.width,
     height: decodedImage.height,
     number: 1,
-    thumbnail
+    thumbnail: thumbnailImage
   })
 
   const pagesMap = IntermediatePageMap.fromInfoList([
@@ -1639,7 +1663,11 @@ export class ImageParser extends DocumentParser {
     }
 
     const pageSize = getRenderPageSize(firstPage)
-    const texts = await firstPage.getTexts()
+    const content = await firstPage.getContent()
+    const texts = content.filter(
+      (item): item is IntermediateText =>
+        'content' in item && typeof item.content === 'string'
+    )
     const canvas = drawDecodedPage(texts, pageSize)
     const mimeType = await getDecodeMimeType(firstPage)
 

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { IntermediateText } from '@hamster-note/types'
 import {
   afterEach,
   beforeEach,
@@ -51,6 +52,23 @@ const describeIfBuilt = existsSync(distEntry) ? describe : describe.skip
 
 const defaultImageWidth = 320
 const defaultImageHeight = 180
+
+function isIntermediateText(item: unknown): item is IntermediateText {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    'content' in item &&
+    typeof (item as { content?: unknown }).content === 'string'
+  )
+}
+
+async function getTextContent(page: {
+  getContent: () => Promise<unknown[]>
+}): Promise<IntermediateText[]> {
+  const content = await page.getContent()
+
+  return content.filter(isIntermediateText)
+}
 
 let imageBehavior: 'load' | 'error' = 'load'
 let originalImage: typeof Image | undefined
@@ -168,9 +186,16 @@ describeIfBuilt('dist 产物互操作', () => {
       throw new Error('缺少 OCR 页面')
     }
 
-    const texts = await firstPage.getTexts()
+    const texts = await getTextContent(firstPage)
+    const thumbnail = await firstPage.getThumbnail()
 
     expect(texts).toHaveLength(0)
+    expect(thumbnail).toBeDefined()
+    if (!thumbnail) {
+      throw new Error('缺少页面缩略图')
+    }
+    expect(typeof thumbnail).toBe('object')
+    expect(thumbnail.src).toBe('data:image/png;base64,AQIDBA==')
   })
 
   it('dist 入口产出的新版文本块可被外部类型序列化', async () => {
@@ -198,7 +223,12 @@ describeIfBuilt('dist 产物互操作', () => {
 
     const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
     const serialized = await IntermediateDocument.serialize(document)
-    const serializedText = serialized.pages[0]?.texts[0]
+    const serializedText = serialized.pages[0]?.content?.find(
+      (
+        item
+      ): item is import('@hamster-note/types').IntermediateTextSerialized =>
+        'content' in item && typeof item.content === 'string'
+    )
 
     expect(serializedText?.polygon).toEqual([
       [10, 20],

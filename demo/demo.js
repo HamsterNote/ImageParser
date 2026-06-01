@@ -502,11 +502,25 @@ const handleInspect = async () => {
   resetResultPanels('Rendering overlay preview...', 'No decode result yet.')
 
   try {
+    console.log('[OCR] 开始加载 PaddleOCR 模块...')
+    console.log('[OCR] 浏览器信息:', navigator.userAgent)
+    console.log('[OCR] 图片信息:', { name: image.name, size: image.size, type: image.type })
+
     globalThis.__IMAGE_PARSER_PADDLE_OCR__ = await loadDemoPaddleOcrModule()
+    console.log('[OCR] PaddleOCR 模块加载成功')
+
     const ImageParser = await loadImageParser()
+    console.log('[OCR] ImageParser 加载成功')
+
     const inspection = await ImageParser.inspect(image)
+    console.log('[OCR] 图片检查结果:', inspection)
+
+    console.log('[OCR] 开始执行 encode()...')
     const document = await ImageParser.encode(image)
+    console.log('[OCR] encode() 完成，开始创建快照...')
+
     const documentSnapshot = await createDocumentSnapshot(document)
+    console.log('[OCR] 快照创建完成:', { emptyResult: documentSnapshot.emptyResult, textCount: documentSnapshot.textCount })
     const recognizedTexts = extractRecognizedTexts(documentSnapshot.value)
     const styledTextCount = countStyledTexts(
       documentSnapshot.value.pages.flatMap((page) => page.texts)
@@ -535,11 +549,18 @@ const handleInspect = async () => {
     })
     setStatus(documentSnapshot.emptyResult ? 'No text found' : 'Done')
   } catch (error) {
+    console.error('[OCR] 执行失败:', error)
+    console.error('[OCR] 错误类型:', error?.constructor?.name)
+    console.error('[OCR] 错误消息:', error instanceof Error ? error.message : String(error))
+    console.error('[OCR] 错误堆栈:', error instanceof Error ? error.stack : '无堆栈信息')
+
     latestDocument = undefined
     setDecodeEnabled(false)
     setSummary('OCR 执行失败；请确认图片可解码、模型资源可加载。')
     setOutput(rawOutput, {
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      errorType: error?.constructor?.name,
+      stack: error instanceof Error ? error.stack : undefined
     })
     setOutput(documentOutput, {
       error: error instanceof Error ? error.message : String(error)

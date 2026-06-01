@@ -24,8 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 调整四边形 polygon 起点归一化规则为按左上点稳定选序，并移除 baseline 原点的单小数舍入，修复 PR #4 在近竖排与裁剪文本场景下的 CI 测试失败
 - 为 npm 公开发布补充 `publishConfig.access` 与 `publishConfig.registry`，对齐 version 分支自动发布链路
 
-## [UnReleased]
+## [0.3.0] - 2026-06-01
 
 ### Added
+- 添加 OCR 调试日志和移动端调试工具，支持在移动端设备上诊断 OCR 识别问题
+- 升级 `@hamster-note/types` 至 0.8.0，适配新型 `IntermediatePage.content` API
 
 ### Changed
+- 简化 texts 数组复制写法，使用展开运算符替代手动逐项复制

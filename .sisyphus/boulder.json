@@ -1,0 +1,67 @@
+{
+  "active_plan": "/home/zhangxiao/.local/share/opencode/worktree/6693cf2979318e37704214169fcdbebf7ad7863b/types-0.8.0/.sisyphus/plans/upgrade-hamster-note-types-0-8-0.md",
+  "started_at": "2026-05-23T13:23:23.516Z",
+  "session_ids": [
+    "ses_1aafec936ffedYTjr0IBT18JPy",
+    "ses_1aad7b6efffeuKA96L5jBD5PCI",
+    "ses_1aad78e1effeUaQ2CHOZYaBDMM",
+    "ses_1aad76fc1ffeiBfgYdYZYL6l1W",
+    "ses_1aad74bb3ffeV1Kwv8L28Nl14H",
+    "ses_1aad1be9cffetIvcnT39GWO3hb"
+  ],
+  "session_origins": {
+    "ses_1aafec936ffedYTjr0IBT18JPy": "direct",
+    "ses_1aad7b6efffeuKA96L5jBD5PCI": "appended",
+    "ses_1aad78e1effeUaQ2CHOZYaBDMM": "appended",
+    "ses_1aad76fc1ffeiBfgYdYZYL6l1W": "appended",
+    "ses_1aad74bb3ffeV1Kwv8L28Nl14H": "appended",
+    "ses_1aad1be9cffetIvcnT39GWO3hb": "appended"
+  },
+  "plan_name": "upgrade-hamster-note-types-0-8-0",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "升级依赖并建立 0.8.0 TDD 合同",
+      "session_id": "ses_1aafae4d1ffezo7gkDgJEOtgzi",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-23T13:33:01.594Z"
+    },
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "迁移 encode 输出到 content 与 IntermediateImage",
+      "session_id": "ses_1aaeeb865ffeRYURCKRFnJDOPP",
+      "agent": "Sisyphus-Junior",
+      "updated_at": "2026-05-23T13:54:43.643Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "更新 dist 互操作测试到最新 API",
+      "session_id": "ses_1aade6076ffegeem2Oa8VkUlZo",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-23T13:59:45.870Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "执行完整验证并清理生成物",
+      "session_id": "ses_1aadcb5aaffeg6wGHEa2apaHOY",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-23T14:03:07.153Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "ses_1aad1be9cffetIvcnT39GWO3hb",
+      "agent": "oracle",
+      "updated_at": "2026-05-23T14:13:19.372Z"
+    }
+  }
+}

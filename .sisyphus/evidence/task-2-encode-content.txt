@@ -1,0 +1,51 @@
+yarn run v1.22.22
+$ NODE_OPTIONS='--experimental-vm-modules' jest --runInBand src/__tests__/imageParser.test.ts -t encode
+(node:3613247) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS src/__tests__/imageParser.test.ts
+  ImageParser
+    ✓ encode 成功时映射 OCR 结果 (13 ms)
+    ✓ encode 会把乱序 polygon 归一化为左上右上右下左下 (3 ms)
+    ✓ encode 会把右上倾斜的横排文本 polygon 归一化为左上右上右下左下 (3 ms)
+    ✓ encode 在近竖直旋转文本上仍可归一化 polygon 点序 (4 ms)
+    ✓ encode 空识别结果时返回空文本页 (1 ms)
+    ✓ encode 会过滤空文本并为非法 poly 提供安全回退 (4 ms)
+    ✓ encode 会对旋转、斜体与异常样式线索执行稳定映射 (10 ms)
+    ✓ encode 对旋转框、轻微梯形与非法 poly 输出稳定几何 (8 ms)
+    ✓ encode 保存原图并支持 decode 按中间文档重建图片 (5 ms)
+    ✓ 显式释放 OCR 实例后下次 encode 会重新初始化 (1 ms)
+    ○ skipped inspect 应返回 ocr-supported 摘要
+    ○ skipped OCR 推理失败时提示明确错误
+    ○ skipped OCR 推理失败后会复位实例缓存并允许重新初始化
+    ○ skipped 图片解码失败时提示明确错误
+    ○ skipped Blob、ArrayBuffer、ArrayBufferView 输入行为一致
+    ○ skipped 优先使用显式注入的 OCR 模块覆盖默认动态导入
+    ○ skipped 支持使用真实类导出形状的 PaddleOCR 工厂
+    ○ skipped ArrayBuffer 输入会根据图片签名设置可解码 MIME
+    ○ skipped ArrayBufferView 输入识别 MIME 时保留 byteOffset 和 byteLength
+    ○ skipped decode 缺少 thumbnail 时回退为默认图片类型并继续导出
+    ○ skipped decode 无法获取二维画布上下文时提示明确错误
+    ○ skipped decode 图片导出失败时提示明确错误
+    ○ skipped decode 使用文本样式与定位在页面上绘制内容
+    ○ skipped decode 对缺失或异常样式值执行安全回退
+    ○ skipped decode 让文本回放宽度对齐并在编辑后立即采用当前 width
+    ○ skipped decode 对梯形 polygon 使用上下边平均宽度回放
+    ○ skipped decode 可归一化非标准起点的 polygon 点序
+    ○ skipped decode 在近竖直旋转文本上仍可归一化 polygon 点序
+    ○ skipped decode 可消费 vertical/ttb 文本并沿纵向边回放
+    ○ skipped decode 在空文本、空白文本、测量异常或非法目标宽度时回退稳定绘制
+    ○ skipped 文档序列化后仍可保留样式字段并继续解码
+    ○ skipped global Blob 不可用时仍可识别 array-buffer-view
+
+----------|---------|----------|---------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                                                                                                                                                                                                          
+----------|---------|----------|---------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+All files |   78.82 |    60.59 |   92.12 |   85.63 |                                                                                                                                                                                                                                                            
+ index.ts |   78.82 |    60.59 |   92.12 |   85.63 | 170-182,221,224,258-270,282,294,301,315,333-349,397,405-406,428,434,444,460-461,473-474,491,539,612,786,792,842,989,1012,1042,1100,1206,1269-1270,1317,1340,1347,1368,1426,1456,1480,1484,1499,1515,1524,1541,1548,1555-1559,1625-1630,1652,1662,1679-1686 
+----------|---------|----------|---------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Test Suites: 1 passed, 1 total
+Tests:       22 skipped, 10 passed, 32 total
+Snapshots:   0 total
+Time:        3.168 s
+Ran all test suites matching src/__tests__/imageParser.test.ts with tests matching "encode".
+Done in 3.59s.

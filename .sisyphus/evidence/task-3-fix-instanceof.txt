@@ -1,0 +1,75 @@
+## lsp_diagnostics src/index.ts
+No error diagnostics found.
+
+## yarn test --runInBand src/__tests__/imageParser.test.ts
+yarn run v1.22.22
+$ NODE_OPTIONS='--experimental-vm-modules' jest --runInBand src/__tests__/imageParser.test.ts
+(node:3616429) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL src/__tests__/imageParser.test.ts
+  ImageParser
+    ✓ inspect 应返回 ocr-supported 摘要 (3 ms)
+    ✓ encode 成功时映射 OCR 结果 (11 ms)
+    ✓ encode 会把乱序 polygon 归一化为左上右上右下左下 (3 ms)
+    ✓ encode 会把右上倾斜的横排文本 polygon 归一化为左上右上右下左下 (4 ms)
+    ✓ encode 在近竖直旋转文本上仍可归一化 polygon 点序 (5 ms)
+    ✓ encode 空识别结果时返回空文本页 (1 ms)
+    ✓ encode 会过滤空文本并为非法 poly 提供安全回退 (3 ms)
+    ✓ encode 会对旋转、斜体与异常样式线索执行稳定映射 (9 ms)
+    ✓ encode 对旋转框、轻微梯形与非法 poly 输出稳定几何 (9 ms)
+    ✓ OCR 推理失败时提示明确错误 (41 ms)
+    ✓ OCR 推理失败后会复位实例缓存并允许重新初始化 (3 ms)
+    ✓ 图片解码失败时提示明确错误 (1 ms)
+    ✓ Blob、ArrayBuffer、ArrayBufferView 输入行为一致 (1 ms)
+    ✓ 优先使用显式注入的 OCR 模块覆盖默认动态导入 (2 ms)
+    ✓ 支持使用真实类导出形状的 PaddleOCR 工厂 (2 ms)
+    ✓ ArrayBuffer 输入会根据图片签名设置可解码 MIME (1 ms)
+    ✓ ArrayBufferView 输入识别 MIME 时保留 byteOffset 和 byteLength
+    ✓ encode 保存原图并支持 decode 按中间文档重建图片 (4 ms)
+    ✓ 显式释放 OCR 实例后下次 encode 会重新初始化 (1 ms)
+    ✓ decode 缺少 thumbnail 时回退为默认图片类型并继续导出 (1 ms)
+    ✓ decode 无法获取二维画布上下文时提示明确错误 (1 ms)
+    ✓ decode 图片导出失败时提示明确错误
+    ✓ decode 使用文本样式与定位在页面上绘制内容 (2 ms)
+    ✓ decode 对缺失或异常样式值执行安全回退 (2 ms)
+    ✓ decode 让文本回放宽度对齐并在编辑后立即采用当前 width (2 ms)
+    ✓ decode 对梯形 polygon 使用上下边平均宽度回放 (2 ms)
+    ✓ decode 可归一化非标准起点的 polygon 点序 (3 ms)
+    ✓ decode 在近竖直旋转文本上仍可归一化 polygon 点序 (2 ms)
+    ✓ decode 可消费 vertical/ttb 文本并沿纵向边回放 (3 ms)
+    ✓ decode 在空文本、空白文本、测量异常或非法目标宽度时回退稳定绘制 (3 ms)
+    ✕ 文档序列化后仍可保留样式字段并继续解码 (3 ms)
+    ✓ global Blob 不可用时仍可识别 array-buffer-view (1 ms)
+
+  ● ImageParser › 文档序列化后仍可保留样式字段并继续解码
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 600
+    Received: undefined
+
+      1936 |     const serializedText = serialized.pages[0]?.texts?.[0]
+      1937 |
+    > 1938 |     expect(serializedText?.fontWeight).toBe(600)
+           |                                        ^
+      1939 |     expect(serializedText?.italic).toBe(true)
+      1940 |     expect(serializedText?.polygon).toEqual([
+      1941 |       [140, 24],
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:1938:40)
+
+----------|---------|----------|---------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                                                                                                                               
+----------|---------|----------|---------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+All files |   85.04 |    72.45 |   96.85 |   89.84 |                                                                                                                                                                                 
+ index.ts |   85.04 |    72.45 |   96.85 |   89.84 | 177,221,224,258-270,282,301,315,333-349,397,405-406,428,434,444,460-461,491,539,786,792,842,989,1012,1042,1100,1206,1317,1340,1347,1368,1515,1524,1548,1555-1559,1652,1662,1680 
+----------|---------|----------|---------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 31 passed, 32 total
+Snapshots:   0 total
+Time:        2.792 s
+Ran all test suites matching src/__tests__/imageParser.test.ts.
+error Command failed with exit code 1.
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.
+
+test_exit_status=1

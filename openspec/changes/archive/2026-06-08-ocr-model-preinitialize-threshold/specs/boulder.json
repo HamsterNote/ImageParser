@@ -1,0 +1,155 @@
+{
+  "schema_version": 2,
+  "active_work_id": "ocr-model-preinitialize-threshold-716ec73e",
+  "works": {
+    "ocr-model-preinitialize-threshold-716ec73e": {
+      "work_id": "ocr-model-preinitialize-threshold-716ec73e",
+      "active_plan": "/home/zhangxiao/frontend/worktrees/ImageParser/fix-failed-to-fetch-module/.omo/plans/ocr-model-preinitialize-threshold.md",
+      "plan_name": "ocr-model-preinitialize-threshold",
+      "status": "completed",
+      "started_at": "2026-06-07T12:56:00.716Z",
+      "updated_at": "2026-06-07T14:12:55.488Z",
+      "session_ids": [
+        "opencode:ses_15dd8765cffeyElmvSRXONX5V3",
+        "opencode:ses_15da30d2cffe7tCpHUeoehTZyq",
+        "opencode:ses_15da2dd9effehRw69ONpRuQvpo",
+        "opencode:ses_15da266cbffeYoTy55d7zZwT1Q",
+        "opencode:ses_15da225e6ffeg23PcX7yDVhByL"
+      ],
+      "session_origins": {
+        "opencode:ses_15dd8765cffeyElmvSRXONX5V3": "direct",
+        "opencode:ses_15da30d2cffe7tCpHUeoehTZyq": "appended",
+        "opencode:ses_15da2dd9effehRw69ONpRuQvpo": "appended",
+        "opencode:ses_15da266cbffeYoTy55d7zZwT1Q": "appended",
+        "opencode:ses_15da225e6ffeg23PcX7yDVhByL": "appended"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "`yarn test` — full Jest suite, must exit 0, no new skips beyond what existed before this plan started.",
+          "session_id": "opencode:ses_15db78ff6ffeAnb7H7jjHN5Pei",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-06-07T13:02:22.898Z",
+          "ended_at": "2026-06-07T13:33:40.625Z",
+          "elapsed_ms": 1877727,
+          "status": "completed",
+          "updated_at": "2026-06-07T13:33:40.625Z"
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "Perform Demo manual QA with existing local server flow",
+          "session_id": "opencode:ses_15db427b3ffeoDmIzst9lo7ocw",
+          "agent": "Sisyphus-Junior",
+          "started_at": "2026-06-07T13:45:14.440Z",
+          "status": "completed",
+          "updated_at": "2026-06-07T13:49:53.127Z",
+          "ended_at": "2026-06-07T13:49:53.127Z",
+          "elapsed_ms": 278687
+        },
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "Regression and scope-fidelity audit",
+          "session_id": "opencode:ses_15da678d0ffe6myucbkaUd7k3o",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T13:53:41.036Z",
+          "started_at": "2026-06-07T13:52:39.578Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T13:53:41.036Z",
+          "elapsed_ms": 61458
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan Compliance Audit — oracle",
+          "session_id": "opencode:ses_15d9922d9ffenDBbNFsqlBUVZj",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-07T14:04:40.287Z",
+          "status": "running",
+          "updated_at": "2026-06-07T14:11:05.881Z"
+        }
+      },
+      "ended_at": "2026-06-07T14:12:55.488Z",
+      "elapsed_ms": 4614772
+    }
+  },
+  "active_plan": "/home/zhangxiao/frontend/worktrees/ImageParser/fix-failed-to-fetch-module/.omo/plans/ocr-model-preinitialize-threshold.md",
+  "started_at": "2026-06-07T12:56:00.716Z",
+  "status": "completed",
+  "updated_at": "2026-06-07T14:12:55.488Z",
+  "session_ids": [
+    "opencode:ses_15dd8765cffeyElmvSRXONX5V3",
+    "opencode:ses_15da30d2cffe7tCpHUeoehTZyq",
+    "opencode:ses_15da2dd9effehRw69ONpRuQvpo",
+    "opencode:ses_15da266cbffeYoTy55d7zZwT1Q",
+    "opencode:ses_15da225e6ffeg23PcX7yDVhByL"
+  ],
+  "session_origins": {
+    "opencode:ses_15dd8765cffeyElmvSRXONX5V3": "direct",
+    "opencode:ses_15da30d2cffe7tCpHUeoehTZyq": "appended",
+    "opencode:ses_15da2dd9effehRw69ONpRuQvpo": "appended",
+    "opencode:ses_15da266cbffeYoTy55d7zZwT1Q": "appended",
+    "opencode:ses_15da225e6ffeg23PcX7yDVhByL": "appended"
+  },
+  "plan_name": "ocr-model-preinitialize-threshold",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "`yarn test` — full Jest suite, must exit 0, no new skips beyond what existed before this plan started.",
+      "session_id": "opencode:ses_15db78ff6ffeAnb7H7jjHN5Pei",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "started_at": "2026-06-07T13:02:22.898Z",
+      "ended_at": "2026-06-07T13:33:40.625Z",
+      "elapsed_ms": 1877727,
+      "status": "completed",
+      "updated_at": "2026-06-07T13:33:40.625Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Perform Demo manual QA with existing local server flow",
+      "session_id": "opencode:ses_15db427b3ffeoDmIzst9lo7ocw",
+      "agent": "Sisyphus-Junior",
+      "started_at": "2026-06-07T13:45:14.440Z",
+      "status": "completed",
+      "updated_at": "2026-06-07T13:49:53.127Z",
+      "ended_at": "2026-06-07T13:49:53.127Z",
+      "elapsed_ms": 278687
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "Regression and scope-fidelity audit",
+      "session_id": "opencode:ses_15da678d0ffe6myucbkaUd7k3o",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-06-07T13:53:41.036Z",
+      "started_at": "2026-06-07T13:52:39.578Z",
+      "status": "completed",
+      "ended_at": "2026-06-07T13:53:41.036Z",
+      "elapsed_ms": 61458
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "opencode:ses_15d9922d9ffenDBbNFsqlBUVZj",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "started_at": "2026-06-07T14:04:40.287Z",
+      "status": "running",
+      "updated_at": "2026-06-07T14:11:05.881Z"
+    }
+  },
+  "agent": "atlas",
+  "ended_at": "2026-06-07T14:12:55.488Z",
+  "elapsed_ms": 4614772
+}

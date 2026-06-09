@@ -1,0 +1,2 @@
+Change 'add-ocr-initialize-min-score' is valid
+exit=0

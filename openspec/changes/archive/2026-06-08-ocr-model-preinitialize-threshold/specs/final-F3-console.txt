@@ -1,0 +1,25 @@
+[scenario-1-init] [error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[scenario-1-init] [log] [PaddleOCR] 开始初始化 OCR 实例...
+[scenario-1-init] [log] [PaddleOCR] 配置: {lang: ch, ocrVersion: PP-OCRv5, backend: wasm, numThreads: 1, simd: false}
+[scenario-1-init] [log] [PaddleOCR] 创建 Worker: http://localhost:8269/dist/assets/worker-entry-Dtffs1su.js
+[scenario-1-init] [log] [PaddleOCR] Worker 类型: module
+[scenario-1-init] [log] [PaddleOCR] Worker 创建成功
+[scenario-1-init] [log] [PaddleOCR] OCR 实例创建成功
+[scenario-3-no-threshold] [log] [OCR] 开始加载 PaddleOCR 模块...
+[scenario-3-no-threshold] [log] [OCR] 浏览器信息: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36
+[scenario-3-no-threshold] [log] [OCR] 图片信息: {name: hello-ocr.png, size: 11503, type: image/png}
+[scenario-3-no-threshold] [log] [OCR] PaddleOCR 模块加载成功
+[scenario-3-no-threshold] [log] [OCR] ImageParser 加载成功
+[scenario-3-no-threshold] [log] [OCR] 图片检查结果: {byteLength: 11503, kind: blob, message: ImageParser 支持真实图片 OCR 编码；inspect 不会加载模型或执行识别。, mimeType: image/png, status: ocr-supported}
+[scenario-3-no-threshold] [log] [OCR] 开始执行 encode()... {encodeOptions: undefined}
+[scenario-3-no-threshold] [log] [OCR] encode() 完成，耗时: 317.19999980926514 ms
+[scenario-3-no-threshold] [log] [OCR] 快照创建完成: {emptyResult: false, textCount: 2}
+[scenario-4-valid-threshold] [log] [OCR] 开始加载 PaddleOCR 模块...
+[scenario-4-valid-threshold] [log] [OCR] 浏览器信息: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36
+[scenario-4-valid-threshold] [log] [OCR] 图片信息: {name: hello-ocr.png, size: 11503, type: image/png}
+[scenario-4-valid-threshold] [log] [OCR] PaddleOCR 模块加载成功
+[scenario-4-valid-threshold] [log] [OCR] ImageParser 加载成功
+[scenario-4-valid-threshold] [log] [OCR] 图片检查结果: {byteLength: 11503, kind: blob, message: ImageParser 支持真实图片 OCR 编码；inspect 不会加载模型或执行识别。, mimeType: image/png, status: ocr-supported}
+[scenario-4-valid-threshold] [log] [OCR] 开始执行 encode()... {encodeOptions: Object}
+[scenario-4-valid-threshold] [log] [OCR] encode() 完成，耗时: 230.39999985694885 ms
+[scenario-4-valid-threshold] [log] [OCR] 快照创建完成: {emptyResult: false, textCount: 2}

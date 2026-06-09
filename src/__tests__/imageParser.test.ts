@@ -2007,3 +2007,384 @@ describe('ImageParser', () => {
     }
   })
 })
+
+describe('ImageParser.initialize and minScore', () => {
+  it('静态 ImageParser.initialize() 返回 Promise 且仅触发一次 PaddleOCR.create', async () => {
+    // red-state TDD: type will exist after Task 3
+    await (ImageParser as any).initialize()
+
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('实例 new ImageParser().initialize() 复用缓存，不创建第二个 OCR 实例', async () => {
+    const parser = new (ImageParser as any)()
+
+    await (ImageParser as any).initialize()
+    await parser.initialize()
+
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('initialize() 后调用 encode(blob) 不会再次触发 PaddleOCR.create', async () => {
+    // red-state TDD: type will exist after Task 3
+    await (ImageParser as any).initialize()
+    mockCreate.mockClear()
+
+    await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('并发 Promise.all([initialize(), initialize()]) 仅触发一次 PaddleOCR.create', async () => {
+    await Promise.all([
+      (ImageParser as any).initialize(),
+      (ImageParser as any).initialize()
+    ])
+
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('initialize() 首次失败清除缓存，第二次调用重试成功', async () => {
+    mockCreate
+      .mockRejectedValueOnce(new Error('model download failed'))
+
+    await expect(
+      (ImageParser as any).initialize()
+    ).rejects.toThrow()
+
+    mockCreate.mockReset()
+    mockCreate.mockImplementation(async () => ({
+      dispose: mockDispose,
+      predict: mockPredict
+    }))
+
+    await (ImageParser as any).initialize()
+
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('encode(input, { minScore: 0.8 }) 保留 score >= 0.8 的项，丢弃 score < 0.8', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.95,
+            text: 'high score'
+          },
+          {
+            poly: [
+              [10, 50],
+              [110, 50],
+              [110, 74],
+              [10, 74]
+            ],
+            score: 0.8,
+            text: 'boundary equal'
+          },
+          {
+            poly: [
+              [10, 80],
+              [110, 80],
+              [110, 104],
+              [10, 104]
+            ],
+            score: 0.79,
+            text: 'just below'
+          },
+          {
+            poly: [
+              [10, 110],
+              [110, 110],
+              [110, 134],
+              [10, 134]
+            ],
+            score: 0.5,
+            text: 'low score'
+          }
+        ]
+      }
+    ])
+
+    // red-state TDD: type will exist after Task 3
+    const document = await (ImageParser as any).encode(
+      Uint8Array.from([1, 2, 3, 4]),
+      { minScore: 0.8 }
+    )
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await getTextContent(firstPage)
+    const contents = texts.map(
+      (text) => (text as unknown as { content: string }).content
+    )
+
+    expect(texts).toHaveLength(2)
+    expect(contents).toContain('high score')
+    expect(contents).toContain('boundary equal')
+    expect(contents).not.toContain('just below')
+    expect(contents).not.toContain('low score')
+  })
+
+  it('minScore 设置时，score 为 undefined/NaN/Infinity/-Infinity/非数字类型 的项被丢弃', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.9,
+            text: 'valid score'
+          },
+          {
+            poly: [
+              [10, 50],
+              [110, 50],
+              [110, 74],
+              [10, 74]
+            ],
+            text: 'missing score'
+          },
+          {
+            poly: [
+              [10, 80],
+              [110, 80],
+              [110, 104],
+              [10, 104]
+            ],
+            score: Number.NaN,
+            text: 'NaN score'
+          },
+          {
+            poly: [
+              [10, 110],
+              [110, 110],
+              [110, 134],
+              [10, 134]
+            ],
+            score: Number.POSITIVE_INFINITY,
+            text: 'Infinity score'
+          },
+          {
+            poly: [
+              [10, 140],
+              [110, 140],
+              [110, 164],
+              [10, 164]
+            ],
+            score: Number.NEGATIVE_INFINITY,
+            text: '-Infinity score'
+          },
+          {
+            poly: [
+              [10, 170],
+              [110, 170],
+              [110, 194],
+              [10, 194]
+            ],
+            score: '0.9' as unknown as number,
+            text: 'string score'
+          }
+        ]
+      }
+    ])
+
+    // red-state TDD: type will exist after Task 3
+    const document = await (ImageParser as any).encode(
+      Uint8Array.from([1, 2, 3, 4]),
+      { minScore: 0.5 }
+    )
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await getTextContent(firstPage)
+    const contents = texts.map(
+      (text) => (text as unknown as { content: string }).content
+    )
+
+    expect(texts).toHaveLength(1)
+    expect(contents).toContain('valid score')
+    expect(contents).not.toContain('missing score')
+    expect(contents).not.toContain('NaN score')
+    expect(contents).not.toContain('Infinity score')
+    expect(contents).not.toContain('-Infinity score')
+    expect(contents).not.toContain('string score')
+  })
+
+  it('minScore 未设置时（无 options），所有项包括缺失/NaN score 均保留', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.9,
+            text: 'with score'
+          },
+          {
+            poly: [
+              [10, 50],
+              [110, 50],
+              [110, 74],
+              [10, 74]
+            ],
+            text: 'no score'
+          },
+          {
+            poly: [
+              [10, 80],
+              [110, 80],
+              [110, 104],
+              [10, 104]
+            ],
+            score: Number.NaN,
+            text: 'NaN score kept'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await getTextContent(firstPage)
+    const contents = texts.map(
+      (text) => (text as unknown as { content: string }).content
+    )
+
+    expect(texts).toHaveLength(3)
+    expect(contents).toContain('with score')
+    expect(contents).toContain('no score')
+    expect(contents).toContain('NaN score kept')
+  })
+
+  it.each([
+    { label: 'NaN', value: Number.NaN },
+    { label: 'Infinity', value: Number.POSITIVE_INFINITY },
+    { label: '-Infinity', value: Number.NEGATIVE_INFINITY },
+    { label: '-0.1 (below range)', value: -0.1 },
+    { label: '1.1 (above range)', value: 1.1 },
+    { label: '"0.5" (string)', value: '0.5' as unknown as number },
+    { label: 'null', value: null as unknown as number }
+  ])(
+    '无效 minScore=$label 抛错且不调用 PaddleOCR.create',
+    async ({ value }) => {
+      await disposePaddleOcrRuntimeForTesting()
+      mockCreate.mockClear()
+
+      await expect(
+        (ImageParser as any).encode(
+          Uint8Array.from([1, 2, 3, 4]),
+          { minScore: value }
+        )
+      ).rejects.toThrow()
+
+      expect(mockCreate).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    { label: '0 (lower boundary)', value: 0 },
+    { label: '1 (upper boundary)', value: 1 }
+  ])(
+    '边界 minScore=$label 通过验证并正常调用 OCR',
+    async ({ value }) => {
+      mockPredict.mockResolvedValueOnce([
+        {
+          items: [
+            {
+              poly: [
+                [10, 20],
+                [110, 20],
+                [110, 44],
+                [10, 44]
+              ],
+              score: 0.95,
+            text: 'boundary test'
+            }
+          ]
+        }
+      ])
+
+      // red-state TDD: type will exist after Task 3
+      const document = await (ImageParser as any).encode(
+        Uint8Array.from([1, 2, 3, 4]),
+        { minScore: value }
+      )
+
+      expect(document.pageCount).toBe(1)
+      expect(mockCreate).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('encode(input) 无 options 时输出不变（回归守护）', async () => {
+    mockPredict.mockResolvedValueOnce([
+      {
+        items: [
+          {
+            poly: [
+              [10, 20],
+              [110, 20],
+              [110, 44],
+              [10, 44]
+            ],
+            score: 0.98,
+            text: 'baseline'
+          }
+        ]
+      }
+    ])
+
+    const document = await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+    const pages = await document.pages
+    const firstPage = pages[0]
+
+    if (!firstPage) {
+      throw new Error('缺少 OCR 页面')
+    }
+
+    const texts = await getTextContent(firstPage)
+    const text = texts[0] as unknown as {
+      content: string
+      polygon: TestTextPolygon
+    }
+
+    expect(document.pageCount).toBe(1)
+    expect(texts).toHaveLength(1)
+    expect(text.content).toBe('baseline')
+    expect(text.polygon).toEqual([
+      [10, 20],
+      [110, 20],
+      [110, 44],
+      [10, 44]
+    ])
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+    expect(mockPredict).toHaveBeenCalledTimes(1)
+  })
+})

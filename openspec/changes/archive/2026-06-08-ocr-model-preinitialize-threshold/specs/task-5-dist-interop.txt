@@ -1,0 +1,20 @@
+yarn run v1.22.22
+$ NODE_OPTIONS='--experimental-vm-modules' jest src/__tests__/dist-interop.test.ts --runInBand
+(node:1957127) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS src/__tests__/dist-interop.test.ts
+  dist 产物互操作
+    ✓ encode 返回的文档与外部类型保持一致 (14 ms)
+    ✓ dist 入口产出的新版文本块可被外部类型序列化 (3 ms)
+
+----------|---------|----------|---------|---------|-------------------
+File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+----------|---------|----------|---------|---------|-------------------
+All files |       0 |        0 |       0 |       0 |                   
+----------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       2 passed, 2 total
+Snapshots:   0 total
+Time:        1.247 s, estimated 2 s
+Ran all test suites matching src/__tests__/dist-interop.test.ts.
+Done in 1.57s.

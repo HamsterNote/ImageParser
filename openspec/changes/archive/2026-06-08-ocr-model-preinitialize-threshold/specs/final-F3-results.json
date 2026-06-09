@@ -1,0 +1,59 @@
+{
+  "scenario_1_init": {
+    "pass": true,
+    "state": {
+      "status": "Idle",
+      "initStatus": "已初始化",
+      "initBtnText": "已初始化",
+      "initBtnDisabled": true,
+      "summary": "Choose an image, then click Run OCR.",
+      "rawOutput": "No OCR result yet."
+    }
+  },
+  "scenario_2_reinit": {
+    "pass": true,
+    "state": {
+      "status": "Idle",
+      "initStatus": "已初始化",
+      "initBtnText": "已初始化",
+      "initBtnDisabled": false,
+      "summary": "Choose an image, then click Run OCR.",
+      "rawOutput": "No OCR result yet."
+    },
+    "new_init_logs_after_reclick": []
+  },
+  "scenario_3_no_threshold": {
+    "pass": true,
+    "state": {
+      "status": "Done",
+      "initStatus": "已初始化",
+      "initBtnText": "已初始化",
+      "initBtnDisabled": true,
+      "summary": "OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 2 个带样式线索的文本块。处理耗时: 317ms（未传 minScore（默认不过滤））",
+      "rawOutput": "{\n  \"inspection\": {\n    \"byteLength\": 11503,\n    \"kind\": \"blob\",\n    \"message\": \"ImageParser 支持真实图片 OCR 编码；inspect 不会加载模型或执行识别。\",\n    \"mimeType\": \"image/png\",\n    \"status\": \"ocr-supported\",\n    \"supportedExtensions\": [\n      \"png\",\n      \"jpg\",\n      \"jpeg\",\n      \"gif\",\n      \"webp\",\n      \"bmp\",\n      \"svg\"\n    ]\n  },\n  \"note\": \"已跳过额外原始 OCR 推理，以避免同一张图片执行两次识别导致页面卡顿。\",\n  \"pageCount\": 1,\n  \"process"
+    }
+  },
+  "scenario_4_valid_threshold": {
+    "pass": true,
+    "state": {
+      "status": "Done",
+      "initStatus": "已初始化",
+      "initBtnText": "已初始化",
+      "initBtnDisabled": true,
+      "summary": "OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 2 个带样式线索的文本块。处理耗时: 230ms（minScore=0.8）",
+      "rawOutput": "{\n  \"inspection\": {\n    \"byteLength\": 11503,\n    \"kind\": \"blob\",\n    \"message\": \"ImageParser 支持真实图片 OCR 编码；inspect 不会加载模型或执行识别。\",\n    \"mimeType\": \"image/png\",\n    \"status\": \"ocr-supported\",\n    \"supportedExtensions\": [\n      \"png\",\n      \"jpg\",\n      \"jpeg\",\n      \"gif\",\n      \"webp\",\n      \"bmp\",\n      \"svg\"\n    ]\n  },\n  \"note\": \"已跳过额外原始 OCR 推理，以避免同一张图片执行两次识别导致页面卡顿。\",\n  \"pageCount\": 1,\n  \"process"
+    }
+  },
+  "scenario_5_invalid_threshold": {
+    "pass": true,
+    "state": {
+      "status": "Invalid threshold",
+      "initStatus": "已初始化",
+      "initBtnText": "已初始化",
+      "initBtnDisabled": true,
+      "summary": "最低分数无效：1.5 超出 [0, 1] 区间。",
+      "rawOutput": "{\n  \"error\": \"最低分数无效：1.5 超出 [0, 1] 区间。\"\n}"
+    },
+    "forbidden_hits": []
+  }
+}

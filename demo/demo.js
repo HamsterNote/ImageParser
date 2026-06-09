@@ -4,10 +4,13 @@ const DEFAULT_IMAGE_MIME_TYPE = 'image/png'
 
 const decodeButton = document.querySelector('[data-action="decode"]')
 const inspectButton = document.querySelector('[data-action="inspect"]')
+const initModelButton = document.querySelector('[data-action="init-model"]')
 const imageInput = document.querySelector('[data-role="image-input"]')
+const thresholdInput = document.querySelector('[data-role="threshold"]')
 const rawOutput = document.querySelector('[data-role="raw-output"]')
 const documentOutput = document.querySelector('[data-role="document-output"]')
 const status = document.querySelector('[data-role="status"]')
+const initStatus = document.querySelector('[data-role="init-status"]')
 const summary = document.querySelector('[data-role="summary"]')
 const overlayPreview = document.querySelector('[data-role="overlay-preview"]')
 const overlayPlaceholder = document.querySelector(
@@ -76,6 +79,65 @@ const setSummary = (text) => {
   }
 }
 
+// ---- 初始化状态机 ----
+// 四态：idle / initializing / ready / failed
+// 仅 Demo 层使用，库层通过 ImageParser.initialize() 缓存自动去重。
+let initState = 'idle'
+
+const setInitState = (nextState) => {
+  initState = nextState
+
+  if (!(initModelButton instanceof HTMLButtonElement)) return
+
+  switch (nextState) {
+    case 'initializing':
+      initModelButton.textContent = '初始化中…'
+      initModelButton.disabled = true
+      if (initStatus) initStatus.textContent = '初始化中…'
+      break
+    case 'ready':
+      initModelButton.textContent = '已初始化'
+      initModelButton.disabled = true
+      if (initStatus) initStatus.textContent = '已初始化'
+      break
+    case 'failed':
+      initModelButton.textContent = '重试初始化'
+      initModelButton.disabled = false
+      if (initStatus) initStatus.textContent = '初始化失败，可重试'
+      break
+    default:
+      initModelButton.textContent = '初始化模型'
+      initModelButton.disabled = false
+      if (initStatus) initStatus.textContent = '未初始化'
+      break
+  }
+}
+
+// ---- 阈值解析 ----
+// 空字符串/纯空白 → undefined（表示不传 options）
+// 非数字/非有限/超出 [0,1] 区间 → 返回 { error: '...' }
+// 否则 → { value: number }
+const parseThresholdInput = () => {
+  if (!(thresholdInput instanceof HTMLInputElement)) {
+    return { value: undefined }
+  }
+
+  const raw = thresholdInput.value
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return { value: undefined }
+  }
+
+  const parsed = Number.parseFloat(raw)
+  if (Number.isNaN(parsed) || !Number.isFinite(parsed)) {
+    return { error: `最低分数无效：无法解析 "${raw}" 为数字。` }
+  }
+  if (parsed < 0 || parsed > 1) {
+    return { error: `最低分数无效：${parsed} 超出 [0, 1] 区间。` }
+  }
+
+  return { value: parsed }
+}
+
 const setOutput = (element, value) => {
   if (element) {
     element.textContent =
@@ -94,16 +156,53 @@ const getSelectedImage = () => {
   return imageInput.files?.[0]
 }
 
+const isIntermediateText = (item) => {
+  return (
+    item &&
+    typeof item === 'object' &&
+    'content' in item &&
+    typeof item.content === 'string'
+  )
+}
+
+const getSerializedPageTexts = (page) => {
+  if (Array.isArray(page.texts)) return page.texts
+  if (!Array.isArray(page.content)) return []
+
+  return page.content.filter(isIntermediateText)
+}
+
+const getPageTexts = async (page) => {
+  if (typeof page.getTexts === 'function') return await page.getTexts()
+
+  const content =
+    typeof page.getContent === 'function' ? await page.getContent() : page.content
+
+  return Array.isArray(content) ? content.filter(isIntermediateText) : []
+}
+
+const getThumbnailSource = (thumbnail) => {
+  if (typeof thumbnail === 'string') return thumbnail.trim()
+  if (
+    thumbnail &&
+    typeof thumbnail === 'object' &&
+    'src' in thumbnail &&
+    typeof thumbnail.src === 'string'
+  ) {
+    return thumbnail.src.trim()
+  }
+
+  return undefined
+}
+
 const createDocumentSnapshot = async (document) => {
   const IntermediateDocument = await loadIntermediateDocumentApi()
   const serialized = await IntermediateDocument.serialize(document)
-  const textCount = serialized.pages.reduce(
-    (count, page) => count + page.texts.length,
-    0
-  )
+  const pageTexts = serialized.pages.map(getSerializedPageTexts)
+  const textCount = pageTexts.reduce((count, texts) => count + texts.length, 0)
 
   return {
-    emptyResult: serialized.pages.every((page) => page.texts.length === 0),
+    emptyResult: pageTexts.every((texts) => texts.length === 0),
     parsed: IntermediateDocument.parse(serialized),
     textCount,
     value: serialized
@@ -276,7 +375,7 @@ const countStyledTexts = (texts) => {
 
 const extractRecognizedTexts = (snapshot) => {
   return snapshot.pages.flatMap((page, pageIndex) => {
-    return page.texts.map((text, textIndex) => ({
+    return getSerializedPageTexts(page).map((text, textIndex) => ({
       content: text.content,
       fontSize: text.fontSize,
       fontWeight: text.fontWeight,
@@ -347,16 +446,17 @@ const getFirstPageData = async (document) => {
   const width = normalizeDimension(firstPage.width, 1)
   const height = normalizeDimension(firstPage.height, 1)
   const thumbnail = await firstPage.getThumbnail()
-  const texts = await firstPage.getTexts()
+  const thumbnailSrc = getThumbnailSource(thumbnail)
+  const texts = await getPageTexts(firstPage)
 
-  if (!thumbnail) {
+  if (!thumbnailSrc) {
     throw new Error('中间文档缺少原图数据，无法展示预览。')
   }
 
   return {
     height,
     texts,
-    thumbnail,
+    thumbnailSrc,
     width
   }
 }
@@ -408,7 +508,7 @@ const renderOverlayPreview = async (document) => {
   if (!(overlayPreview instanceof HTMLCanvasElement)) return
 
   const page = await getFirstPageData(document)
-  const image = await loadImageElement(page.thumbnail)
+  const image = await loadImageElement(page.thumbnailSrc)
   const context = overlayPreview.getContext('2d')
 
   if (!context) {
@@ -478,6 +578,21 @@ const resetResultPanels = (overlayMessage, decodeMessage) => {
   resetDecodeResult(decodeMessage)
 }
 
+const handleInitModel = async () => {
+  if (initState === 'initializing' || initState === 'ready') return
+
+  setInitState('initializing')
+  try {
+    globalThis.__IMAGE_PARSER_PADDLE_OCR__ = await loadDemoPaddleOcrModule()
+    const ImageParser = await loadImageParser()
+    await ImageParser.initialize()
+    setInitState('ready')
+  } catch (error) {
+    console.error('[OCR] initialize 失败:', error)
+    setInitState('failed')
+  }
+}
+
 const handleInspect = async () => {
   if (!rawOutput || !documentOutput) return
 
@@ -492,6 +607,19 @@ const handleInspect = async () => {
     resetResultPanels('No overlay preview yet.', 'No decode result yet.')
     return
   }
+
+  // 解析阈值；非法输入直接拒绝并提示，不调用 encode。
+  const threshold = parseThresholdInput()
+  if (threshold.error) {
+    setStatus('Invalid threshold')
+    setSummary(threshold.error)
+    setOutput(rawOutput, { error: threshold.error })
+    setOutput(documentOutput, 'No intermediate document yet.')
+    resetResultPanels('No overlay preview yet.', 'No decode result yet.')
+    return
+  }
+  const encodeOptions =
+    threshold.value === undefined ? undefined : { minScore: threshold.value }
 
   latestDocument = undefined
   setDecodeEnabled(false)
@@ -515,33 +643,42 @@ const handleInspect = async () => {
     const inspection = await ImageParser.inspect(image)
     console.log('[OCR] 图片检查结果:', inspection)
 
-    console.log('[OCR] 开始执行 encode()...')
-    const document = await ImageParser.encode(image)
-    console.log('[OCR] encode() 完成，开始创建快照...')
+    console.log('[OCR] 开始执行 encode()...', { encodeOptions })
+    const startTime = performance.now()
+    const document = await ImageParser.encode(image, encodeOptions)
+    const elapsed = performance.now() - startTime
+    console.log('[OCR] encode() 完成，耗时:', elapsed, 'ms')
 
     const documentSnapshot = await createDocumentSnapshot(document)
     console.log('[OCR] 快照创建完成:', { emptyResult: documentSnapshot.emptyResult, textCount: documentSnapshot.textCount })
     const recognizedTexts = extractRecognizedTexts(documentSnapshot.value)
     const styledTextCount = countStyledTexts(
-      documentSnapshot.value.pages.flatMap((page) => page.texts)
+      documentSnapshot.value.pages.flatMap(getSerializedPageTexts)
     )
 
     latestDocument = documentSnapshot.parsed
     await renderOverlayPreview(documentSnapshot.parsed)
     resetDecodeResult('Click Decode to render the exported image.')
     setDecodeEnabled(true)
+    const timingNote = `处理耗时: ${elapsed.toFixed(0)}ms`
+    const thresholdNote =
+      encodeOptions === undefined
+        ? '未传 minScore（默认不过滤）'
+        : `minScore=${encodeOptions.minScore}`
     setSummary(
       documentSnapshot.emptyResult
-        ? 'OCR 成功，但未识别到文字；下方预览与 Decode 将基于右侧中间文档展示。'
-        : `OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 ${styledTextCount} 个带样式线索的文本块。`
+        ? `OCR 成功，但未识别到文字；下方预览与 Decode 将基于右侧中间文档展示。${timingNote}（${thresholdNote}）`
+        : `OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 ${styledTextCount} 个带样式线索的文本块。${timingNote}（${thresholdNote}）`
     )
     setOutput(rawOutput, {
       inspection,
       note: '已跳过额外原始 OCR 推理，以避免同一张图片执行两次识别导致页面卡顿。',
       pageCount: documentSnapshot.value.pages.length,
+      processingTimeMs: Number(elapsed.toFixed(2)),
       recognizedTexts,
       styledTextCount,
-      textCount: documentSnapshot.textCount
+      textCount: documentSnapshot.textCount,
+      thresholdOption: encodeOptions ?? null
     })
     setOutput(documentOutput, {
       inspection,
@@ -602,7 +739,14 @@ const handleDecode = async () => {
 }
 
 setDecodeEnabled(false)
+setInitState('idle')
 resetResultPanels('No overlay preview yet.', 'No decode result yet.')
+
+if (initModelButton) {
+  initModelButton.addEventListener('click', () => {
+    void handleInitModel()
+  })
+}
 
 if (inspectButton) {
   inspectButton.addEventListener('click', () => {

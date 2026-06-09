@@ -25,6 +25,10 @@ export interface ImageParserInspection {
   supportedExtensions: readonly string[]
 }
 
+export interface ImageParserEncodeOptions {
+  minScore?: number
+}
+
 interface DecodedImage {
   image: HTMLImageElement
   mimeType: string
@@ -180,6 +184,25 @@ function getErrorMessage(error: unknown): string {
 function createParserError(message: string, error?: unknown): Error {
   if (error === undefined) return new Error(message)
   return new Error(`${message}：${getErrorMessage(error)}`)
+}
+
+function validateImageParserEncodeOptions(
+  options?: ImageParserEncodeOptions
+): void {
+  if (options === undefined || options.minScore === undefined) return
+
+  const { minScore } = options
+
+  if (
+    typeof minScore !== 'number' ||
+    !Number.isFinite(minScore) ||
+    minScore < 0 ||
+    minScore > 1
+  ) {
+    throw createParserError(
+      `ImageParser encode 参数无效：minScore 必须是 0 到 1 之间的有限数字，收到 ${String(minScore)}`
+    )
+  }
 }
 
 function createBlobPart(bytes: Uint8Array): BlobPart {
@@ -1638,18 +1661,48 @@ export class ImageParser extends DocumentParser {
     }
   }
 
-  static async encode(input: ParserInput): Promise<IntermediateDocument> {
+  static async initialize(): Promise<void> {
+    await loadPaddleOcrRuntime()
+  }
+
+  async initialize(): Promise<void> {
+    return ImageParser.initialize()
+  }
+
+  static async encode(
+    input: ParserInput,
+    options?: ImageParserEncodeOptions
+  ): Promise<IntermediateDocument> {
+    // 同步验证 minScore，必须在任何 await 之前完成
+    validateImageParserEncodeOptions(options)
+
     const imageBlob = await toImageBlob(input)
     const decodedImage = await decodeImageBlob(imageBlob)
     const ocrResult = await runOcr(decodedImage.image)
-    const blocks = normalizeOcrResult(ocrResult, decodedImage)
+
+    // 在原始 OCR 结果上按 minScore 过滤，过滤在归一化之前完成
+    const minScore = options?.minScore
+    const filteredResult =
+      minScore !== undefined && ocrResult
+        ? ocrResult.filter(
+            (item) =>
+              typeof item.score === 'number' &&
+              Number.isFinite(item.score) &&
+              item.score >= minScore
+          )
+        : ocrResult
+
+    const blocks = normalizeOcrResult(filteredResult, decodedImage)
     const thumbnail = await createImageDataUrl(imageBlob)
 
     return createOcrDocument(decodedImage, blocks, thumbnail)
   }
 
-  async encode(input: ParserInput): Promise<IntermediateDocument> {
-    return ImageParser.encode(input)
+  async encode(
+    input: ParserInput,
+    options?: ImageParserEncodeOptions
+  ): Promise<IntermediateDocument> {
+    return ImageParser.encode(input, options)
   }
 
   static async decode(

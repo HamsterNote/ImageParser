@@ -1,0 +1,13 @@
+=== timing tokens in src/ ===
+=== score: in src/index.ts ===
+1689:              typeof item.score === 'number' &&
+1690:              Number.isFinite(item.score) &&
+1691:              item.score >= minScore
+=== confidence references in src+demo ===
+=== ImageParserEncodeOptions interface body ===
+export interface ImageParserEncodeOptions {
+  minScore?: number
+}
+
+interface DecodedImage {
+  image: HTMLImageElement

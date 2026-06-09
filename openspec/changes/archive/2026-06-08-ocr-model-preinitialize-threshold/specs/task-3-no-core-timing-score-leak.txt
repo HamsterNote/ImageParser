@@ -1,0 +1,4 @@
+# Evidence: no timing instrumentation, no score field persistence in src/index.ts diff
+# grep searched for: performance.now, Date.now, console.time, score:
+# Result: zero matches found (exit=1 confirms no pattern hits)
+exit=1

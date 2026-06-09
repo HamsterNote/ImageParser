@@ -1,0 +1,304 @@
+yarn run v1.22.22
+$ NODE_OPTIONS='--experimental-vm-modules' jest src/__tests__/imageParser.test.ts --runInBand
+(node:1945888) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL src/__tests__/imageParser.test.ts
+  ImageParser
+    ✓ inspect 应返回 ocr-supported 摘要 (3 ms)
+    ✓ encode 成功时映射 OCR 结果 (10 ms)
+    ✓ encode 会把乱序 polygon 归一化为左上右上右下左下 (4 ms)
+    ✓ encode 会把右上倾斜的横排文本 polygon 归一化为左上右上右下左下 (6 ms)
+    ✓ encode 在近竖直旋转文本上仍可归一化 polygon 点序 (4 ms)
+    ✓ encode 空识别结果时返回空文本页 (1 ms)
+    ✓ encode 会过滤空文本并为非法 poly 提供安全回退 (3 ms)
+    ✓ encode 会对旋转、斜体与异常样式线索执行稳定映射 (9 ms)
+    ✓ encode 对旋转框、轻微梯形与非法 poly 输出稳定几何 (8 ms)
+    ✓ OCR 推理失败时提示明确错误 (56 ms)
+    ✓ OCR 推理失败后会复位实例缓存并允许重新初始化 (3 ms)
+    ✓ 图片解码失败时提示明确错误 (1 ms)
+    ✓ Blob、ArrayBuffer、ArrayBufferView 输入行为一致 (1 ms)
+    ✓ 优先使用显式注入的 OCR 模块覆盖默认动态导入 (2 ms)
+    ✓ 支持使用真实类导出形状的 PaddleOCR 工厂 (2 ms)
+    ✓ ArrayBuffer 输入会根据图片签名设置可解码 MIME
+    ✓ ArrayBufferView 输入识别 MIME 时保留 byteOffset 和 byteLength
+    ✓ encode 保存原图并支持 decode 按中间文档重建图片 (4 ms)
+    ✓ 显式释放 OCR 实例后下次 encode 会重新初始化 (1 ms)
+    ✓ decode 缺少 thumbnail 时回退为默认图片类型并继续导出 (1 ms)
+    ✓ decode 兼容遗留字符串 thumbnail 并正确解析 MIME
+    ✓ decode 无法获取二维画布上下文时提示明确错误
+    ✓ decode 图片导出失败时提示明确错误 (1 ms)
+    ✓ decode 使用文本样式与定位在页面上绘制内容 (3 ms)
+    ✓ decode 对缺失或异常样式值执行安全回退 (2 ms)
+    ✓ decode 让文本回放宽度对齐并在编辑后立即采用当前 width (3 ms)
+    ✓ decode 对梯形 polygon 使用上下边平均宽度回放 (2 ms)
+    ✓ decode 可归一化非标准起点的 polygon 点序 (2 ms)
+    ✓ decode 在近竖直旋转文本上仍可归一化 polygon 点序 (3 ms)
+    ✓ decode 可消费 vertical/ttb 文本并沿纵向边回放 (2 ms)
+    ✓ decode 在空文本、空白文本、测量异常或非法目标宽度时回退稳定绘制 (3 ms)
+    ✓ 文档序列化后仍可保留样式字段并继续解码 (3 ms)
+    ✓ global Blob 不可用时仍可识别 array-buffer-view (1 ms)
+  ImageParser.initialize and minScore
+    ✕ 静态 ImageParser.initialize() 返回 Promise 且仅触发一次 PaddleOCR.create
+    ✕ 实例 new ImageParser().initialize() 复用缓存，不创建第二个 OCR 实例 (1 ms)
+    ✕ initialize() 后调用 encode(blob) 不会再次触发 PaddleOCR.create
+    ✕ 并发 Promise.all([initialize(), initialize()]) 仅触发一次 PaddleOCR.create (1 ms)
+    ✕ initialize() 首次失败清除缓存，第二次调用重试成功
+    ✕ encode(input, { minScore: 0.8 }) 保留 score >= 0.8 的项，丢弃 score < 0.8 (7 ms)
+    ✕ minScore 设置时，score 为 undefined/NaN/Infinity/-Infinity/非数字类型 的项被丢弃 (9 ms)
+    ✓ minScore 未设置时（无 options），所有项包括缺失/NaN score 均保留 (5 ms)
+    ✕ 无效 minScore=NaN 抛错且不调用 PaddleOCR.create (1 ms)
+    ✕ 无效 minScore=Infinity 抛错且不调用 PaddleOCR.create
+    ✕ 无效 minScore=-Infinity 抛错且不调用 PaddleOCR.create (1 ms)
+    ✕ 无效 minScore=-0.1 (below range) 抛错且不调用 PaddleOCR.create (1 ms)
+    ✕ 无效 minScore=1.1 (above range) 抛错且不调用 PaddleOCR.create
+    ✕ 无效 minScore="0.5" (string) 抛错且不调用 PaddleOCR.create
+    ✕ 无效 minScore=null 抛错且不调用 PaddleOCR.create (1 ms)
+    ✓ 边界 minScore=0 (lower boundary) 通过验证并正常调用 OCR (2 ms)
+    ✓ 边界 minScore=1 (upper boundary) 通过验证并正常调用 OCR (2 ms)
+    ✓ encode(input) 无 options 时输出不变（回归守护） (2 ms)
+
+  ● ImageParser.initialize and minScore › 静态 ImageParser.initialize() 返回 Promise 且仅触发一次 PaddleOCR.create
+
+    TypeError: ImageParser.initialize is not a function
+
+      2012 |   it('静态 ImageParser.initialize() 返回 Promise 且仅触发一次 PaddleOCR.create', async () => {
+      2013 |     // red-state TDD: type will exist after Task 3
+    > 2014 |     await (ImageParser as any).initialize()
+           |                                ^
+      2015 |
+      2016 |     expect(mockCreate).toHaveBeenCalledTimes(1)
+      2017 |   })
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2014:32)
+
+  ● ImageParser.initialize and minScore › 实例 new ImageParser().initialize() 复用缓存，不创建第二个 OCR 实例
+
+    TypeError: ImageParser.initialize is not a function
+
+      2020 |     const parser = new (ImageParser as any)()
+      2021 |
+    > 2022 |     await (ImageParser as any).initialize()
+           |                                ^
+      2023 |     await parser.initialize()
+      2024 |
+      2025 |     expect(mockCreate).toHaveBeenCalledTimes(1)
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2022:32)
+
+  ● ImageParser.initialize and minScore › initialize() 后调用 encode(blob) 不会再次触发 PaddleOCR.create
+
+    TypeError: ImageParser.initialize is not a function
+
+      2028 |   it('initialize() 后调用 encode(blob) 不会再次触发 PaddleOCR.create', async () => {
+      2029 |     // red-state TDD: type will exist after Task 3
+    > 2030 |     await (ImageParser as any).initialize()
+           |                                ^
+      2031 |     mockCreate.mockClear()
+      2032 |
+      2033 |     await ImageParser.encode(Uint8Array.from([1, 2, 3, 4]))
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2030:32)
+
+  ● ImageParser.initialize and minScore › 并发 Promise.all([initialize(), initialize()]) 仅触发一次 PaddleOCR.create
+
+    TypeError: ImageParser.initialize is not a function
+
+      2038 |   it('并发 Promise.all([initialize(), initialize()]) 仅触发一次 PaddleOCR.create', async () => {
+      2039 |     await Promise.all([
+    > 2040 |       (ImageParser as any).initialize(),
+           |                            ^
+      2041 |       (ImageParser as any).initialize()
+      2042 |     ])
+      2043 |
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2040:28)
+
+  ● ImageParser.initialize and minScore › initialize() 首次失败清除缓存，第二次调用重试成功
+
+    TypeError: ImageParser.initialize is not a function
+
+      2050 |
+      2051 |     await expect(
+    > 2052 |       (ImageParser as any).initialize()
+           |                            ^
+      2053 |     ).rejects.toThrow()
+      2054 |
+      2055 |     mockCreate.mockReset()
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2052:28)
+
+  ● ImageParser.initialize and minScore › encode(input, { minScore: 0.8 }) 保留 score >= 0.8 的项，丢弃 score < 0.8
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 4
+    Received array:  [{"ascent": 18, "color": "#000000", "content": "high score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-1", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 20], [110, 20], [110, 44], [10, 44]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "boundary equal", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-2", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 50], [110, 50], [110, 74], [10, 74]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "just below", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-3", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 80], [110, 80], [110, 104], [10, 104]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "low score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-4", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 110], [110, 110], [110, 134], [10, 134]], "skew": 0, "vertical": false}]
+
+      2129 |     )
+      2130 |
+    > 2131 |     expect(texts).toHaveLength(2)
+           |                   ^
+      2132 |     expect(contents).toContain('high score')
+      2133 |     expect(contents).toContain('boundary equal')
+      2134 |     expect(contents).not.toContain('just below')
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2131:19)
+
+  ● ImageParser.initialize and minScore › minScore 设置时，score 为 undefined/NaN/Infinity/-Infinity/非数字类型 的项被丢弃
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 6
+    Received array:  [{"ascent": 18, "color": "#000000", "content": "valid score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-1", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 20], [110, 20], [110, 44], [10, 44]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "missing score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-2", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 50], [110, 50], [110, 74], [10, 74]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "NaN score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-3", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 80], [110, 80], [110, 104], [10, 104]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "Infinity score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-4", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 110], [110, 110], [110, 134], [10, 134]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "-Infinity score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-5", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 140], [110, 140], [110, 164], [10, 164]], "skew": 0, "vertical": false}, {"ascent": 18, "color": "#000000", "content": "string score", "descent": 6, "dir": "ltr", "fontFamily": "sans-serif", "fontSize": 19, "fontWeight": 400, "id": "image-parser-ocr-text-6", "isEOL": true, "italic": false, "lineHeight": 24, "opacity": undefined, "polygon": [[10, 170], [110, 170], [110, 194], [10, 194]], "skew": 0, "vertical": false}]
+
+      2220 |     )
+      2221 |
+    > 2222 |     expect(texts).toHaveLength(1)
+           |                   ^
+      2223 |     expect(contents).toContain('valid score')
+      2224 |     expect(contents).not.toContain('missing score')
+      2225 |     expect(contents).not.toContain('NaN score')
+
+      at Object.<anonymous> (src/__tests__/imageParser.test.ts:2222:19)
+
+  ● ImageParser.initialize and minScore › 无效 minScore=NaN 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+  ● ImageParser.initialize and minScore › 无效 minScore=Infinity 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+  ● ImageParser.initialize and minScore › 无效 minScore=-Infinity 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+  ● ImageParser.initialize and minScore › 无效 minScore=-0.1 (below range) 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+  ● ImageParser.initialize and minScore › 无效 minScore=1.1 (above range) 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+  ● ImageParser.initialize and minScore › 无效 minScore="0.5" (string) 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+  ● ImageParser.initialize and minScore › 无效 minScore=null 抛错且不调用 PaddleOCR.create
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"id": "image-parser-ocr-document", "outline": undefined, "pagesMap": {"entryById": Map {"image-parser-ocr-page-1" => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}, "entryByPageNumber": Map {1 => {"id": "image-parser-ocr-page-1", "loader": [Function getData], "pageNumber": 1, "size": {"x": 320, "y": 180}}}}, "title": "OCR Image Document (image/png)"}
+
+      2299 |       mockCreate.mockClear()
+      2300 |
+    > 2301 |       await expect(
+           |             ^
+      2302 |         (ImageParser as any).encode(
+      2303 |           Uint8Array.from([1, 2, 3, 4]),
+      2304 |           { minScore: value }
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at src/__tests__/imageParser.test.ts:2301:13
+
+----------|---------|----------|---------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                                                                                                                          
+----------|---------|----------|---------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+All files |   85.18 |     72.7 |   96.82 |   90.03 |                                                                                                                                                                            
+ index.ts |   85.18 |     72.7 |   96.82 |   90.03 | 177,221,224,258-270,282,301,315,333-349,397,405-406,428,434,444,460-461,491,539,786,792,842,989,1012,1042,1100,1206,1340,1347,1368,1515,1524,1548,1555-1559,1652,1662,1680 
+----------|---------|----------|---------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Test Suites: 1 failed, 1 total
+Tests:       14 failed, 37 passed, 51 total
+Snapshots:   0 total
+Time:        2.345 s
+Ran all test suites matching src/__tests__/imageParser.test.ts.
+error Command failed with exit code 1.
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "init-before-file-ready-or-retryable",
+    "passed": true,
+    "details": "initStatus=已初始化; button=已初始化; disabled=True",
+    "timestampMs": 1780840027761
+  },
+  {
+    "name": "init-ready-idempotent",
+    "passed": true,
+    "details": "disabled=True; initializeCalls before=1, after=1",
+    "timestampMs": 1780840028367
+  },
+  {
+    "name": "empty-threshold-run",
+    "passed": true,
+    "details": "status=Done; options=None; summary=OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 2 个带样式线索的文本块。处理耗时: 423ms（未传 minScore（默认不过滤））",
+    "timestampMs": 1780840029090
+  },
+  {
+    "name": "valid-threshold-minscore-pass-through",
+    "passed": true,
+    "details": "status=Done; options={'minScore': 0.8}; summary=OCR 成功；为避免重复推理，左侧不再额外运行一次原始 OCR，下方预览与 Decode 均基于右侧中间文档。检测到 2 个带样式线索的文本块。处理耗时: 301ms（minScore=0.8）",
+    "timestampMs": 1780840029666
+  },
+  {
+    "name": "invalid-threshold-blocks-encode",
+    "passed": true,
+    "details": "status=Invalid threshold; before=2; after=2; summary=最低分数无效：1.5 超出 [0, 1] 区间。",
+    "timestampMs": 1780840029819
+  }
+]

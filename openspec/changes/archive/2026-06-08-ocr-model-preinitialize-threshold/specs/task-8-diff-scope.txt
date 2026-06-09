@@ -1,0 +1,13 @@
+demo/demo.js
+demo/inspect.html
+src/__tests__/imageParser.test.ts
+src/index.ts
+---paddleocr-shim-diff---
+---package-json-diff---
+---decode-overlay-spec-diff---
+---untracked-openspec-files---
+openspec/changes/add-ocr-initialize-min-score/.openspec.yaml
+openspec/changes/add-ocr-initialize-min-score/proposal.md
+openspec/changes/add-ocr-initialize-min-score/specs/image-ocr-encode/spec.md
+openspec/changes/add-ocr-initialize-min-score/specs/paddleocr-js-runtime-compatibility/spec.md
+openspec/changes/add-ocr-initialize-min-score/tasks.md

@@ -1,0 +1,21 @@
+## lsp_diagnostics src/__tests__/dist-interop.test.ts
+No error diagnostics found.
+
+## yarn test --runInBand src/__tests__/dist-interop.test.ts
+yarn run v1.22.22
+$ NODE_OPTIONS='--experimental-vm-modules' jest --runInBand src/__tests__/dist-interop.test.ts
+(node:3622191) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+----------|---------|----------|---------|---------|-------------------
+File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+----------|---------|----------|---------|---------|-------------------
+All files |       0 |        0 |       0 |       0 |                   
+----------|---------|----------|---------|---------|-------------------
+Test Suites: 1 skipped, 0 of 1 total
+Tests:       2 skipped, 2 total
+Snapshots:   0 total
+Time:        1.908 s
+Ran all test suites matching src/__tests__/dist-interop.test.ts.
+Done in 2.24s.
+
+test_exit_status=0

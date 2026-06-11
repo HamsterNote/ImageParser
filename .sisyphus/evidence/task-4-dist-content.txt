@@ -1,0 +1,30 @@
+# Task 4 Evidence: dist-interop Test Verification
+
+## Build Success
+$ yarn build:all
+✔ rolldown v1.0.0-rc.15 Finished in 1.38 s
+All assets copied successfully.
+Exit code: 0
+
+## dist/index.js Generated
+$ ls -la dist/index.js
+-rw-rw-r--  1 zhangxiao  35695 May 23 21:58 dist/index.js
+
+## Test Success
+$ yarn test --runInBand src/__tests__/dist-interop.test.ts
+PASS src/__tests__/dist-interop.test.ts
+  dist 产物互操作
+    ✓ encode 返回的文档与外部类型保持一致 (14 ms)
+    ✓ dist 入口产出的新版文本块可被外部类型序列化 (3 ms)
+Tests:       2 passed, 2 total
+Exit code: 0
+
+## No getTexts() Calls
+$ grep -R "\.getTexts()" src/__tests__/dist-interop.test.ts
+No matches found - getTexts() not used
+
+## Summary
+- yarn build:all: SUCCESS (exit code 0)
+- dist/index.js: EXISTS (35.7KB)
+- dist-interop test: PASSED (2/2 tests)
+- getTexts() removed: VERIFIED

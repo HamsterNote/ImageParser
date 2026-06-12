@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 调整四边形 polygon 起点归一化规则为按左上点稳定选序，并移除 baseline 原点的单小数舍入，修复 PR #4 在近竖排与裁剪文本场景下的 CI 测试失败
 - 为 npm 公开发布补充 `publishConfig.access` 与 `publishConfig.registry`，对齐 version 分支自动发布链路
 
+## [0.4.0] - 2026-06-11
+
+### Added
+- 新增 `minScore` 参数支持，允许在 OCR 编码时设置最小分数阈值，过滤低置信度识别结果
+- 添加 `ImageParserEncodeOptions` 类型定义，支持可选的 `minScore` 配置
+- 新增 `validateImageParserEncodeOptions` 函数，验证 `minScore` 参数有效性（0-1 之间的有限数字）
+- 在 `encode` 方法中实现基于 `minScore` 的 OCR 结果过滤逻辑，在归一化之前完成过滤
+
+### Changed
+- 更新 `ImageParser.encode` 方法签名，支持可选的 `options` 参数
+- 优化 OCR 结果处理流程，在原始结果上按 `minScore` 过滤后再进行归一化
+
 ## [0.3.0] - 2026-06-01
 
 ### Added
